@@ -2078,7 +2078,7 @@ These decisions must not be taken by the coding agent, by the architect, or by a
 | ID | Topic | Answered by |
 |:---|:---|:---|
 | X-01 | FreeCAD headless capabilities (TechDraw PDF export, recompute behaviour) | **Answered** by the Phase 0 spike, 18 Nov 2026: see `doc/adr/0001-freecad-headless-execution.md`. Model, views, dimensions, STEP AP242 and DXF work headless; PDF/SVG export works with the GUI binary in Qt offscreen mode (no Xvfb) |
-| X-02 | First local and cloud models | Phase 0 spike (D-16) |
+| X-02 | First local and cloud models | **Partly answered** by the Phase 0 spike, 19 Nov 2026: see `doc/adr/0002-llm-tool-calling.md`. Local development model `qwen3:30b-a3b` (Ollama, CPU): 3/3 correct tool calls with schema-valid output and no invented values, about 5 min per call. Cloud model comparison (Claude) pending account credit |
 | X-03 | Document extraction tools and acceptance thresholds: Docling plus OCR, measured against a benchmark set of 20–30 representative company documents | Phase 7 |
 | X-04 | Production CAD strategy: FreeCAD alongside CATIA, or a CATIA adapter (§12.1). Remains open until the prototype has been evaluated | Prototype results (F-1, F-2, F-5) and a company decision |
 | X-05 | Which PDM/PLM or document-management system the company uses with CATIA, and whether the platform should integrate with it (D-19) | Product owner asks IT / document control |

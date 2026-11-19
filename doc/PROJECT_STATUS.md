@@ -1,8 +1,8 @@
 # IAIEP – Project status and handoff
 
-**Last updated:** 2026-11-19
+**Last updated:** 2026-11-19 (AI spike done)
 **Current phase:** Phase 0 – Repository and technical foundation (in progress)
-**Paused because:** waiting for a Claude API key for the AI spike.
+**State:** both Phase 0 spikes done. Next: repository setup. The Anthropic key works but the account has no credit yet.
 
 To resume, open this repository in VS Code (Dev Container) and tell the coding agent:
 
@@ -16,6 +16,7 @@ To resume, open this repository in VS Code (Dev Container) and tell the coding a
 |:---|:---|
 | [IAIEP_Comprehensive_Specification_v1.2.md](IAIEP_Comprehensive_Specification_v1.2.md) | The specification. Single source of architectural intent. |
 | [adr/0001-freecad-headless-execution.md](adr/0001-freecad-headless-execution.md) | FreeCAD spike results and decisions. |
+| [adr/0002-llm-tool-calling.md](adr/0002-llm-tool-calling.md) | AI tool-calling spike results and decisions. |
 | [archive/IAIEP_Comprehensive_Specification_v1.1.md](archive/IAIEP_Comprehensive_Specification_v1.1.md) | Superseded version, kept for history only. |
 | [../spikes/freecad-headless/README.md](../spikes/freecad-headless/README.md) | How to rerun the FreeCAD spike. |
 
@@ -51,7 +52,8 @@ v1.1 was reviewed, and v1.2 written. Main changes (full list in the spec's revis
 - `.devcontainer/` contains Python 3.12 + uv, Node LTS, PostgreSQL 17 (`pgvector/pgvector:pg17`) and NATS with JetStream. It was built and tested, and services connect.
 - Connection settings inside the container: `DATABASE_URL=postgresql://iaiep:iaiep@postgres:5432/iaiep`, `NATS_URL=nats://nats:4222` (development credentials only).
 - `.gitignore` and `.env.example` were created. `.env` (secrets) is git-ignored.
-- Git repository initialized (`main`). **Nothing has been committed yet** and no GitHub remote exists.
+- Git repository on GitHub: `https://github.com/kaphagel/ai-engineer` (private), branch `main`.
+- Dev container: loads `.env` if present, sets `LLM_BASE_URL`/`LLM_MODEL` to the Ollama server, and can start other containers (Docker outside of Docker) for the FreeCAD worker.
 - Host: WSL2 with Docker; laptop GPU NVIDIA RTX 3500 Ada (12 GB).
 
 ### Phase 0 spike 1: FreeCAD headless — done
@@ -63,27 +65,31 @@ See ADR-0001. In short:
 - Findings for Phase 1: model the hopper as individual plates; use `optimalBoundingBox()`; automatic drawing checks are essential (views inside the frame, no placeholder text, title block matches metadata); the container needs a non-root user.
 - Repeatability: geometry and DXF identical between runs; STEP identical except the header timestamp.
 
+### Phase 0 spike 2: AI tool calling — done (local model)
+
+See ADR-0002. In short:
+
+- Anthropic key is in `.env` and valid, but the account has **no credit** ("credit balance is too low"). Buy prepaid credit to use it.
+- Local model server: Ollama on `ecsserver` (192.168.10.41:11434), opened to the LAN. CPU only (Quadro K6000 GPUs too old).
+- Model `qwen3:30b-a3b`: 3/3 runs correct; tool called, schema valid, 6.0 m converted to 6000 mm, missing plate thickness flagged and not invented, source quotes genuine. About 4.5 minutes per call.
+- Calls go through the OpenAI-compatible interface (`LLM_BASE_URL`, `LLM_MODEL`, `LLM_API_KEY`), so switching to Claude is a configuration change.
+
 ## 3. Next steps
 
 ### Phase 0 (developer / coding agent)
 
 1. **Repository setup** (no AI key needed):
    - `pyproject.toml` (uv), Ruff, mypy or Pyright, pytest.
-   - GitHub repository and GitHub Actions CI (lint, type check, tests).
+   - GitHub Actions CI (lint, type check, tests). The GitHub repository already exists.
    - `doc/open-decisions.md` mirroring spec §30, or keep §30 as the register and reference it.
-   - First commit and push.
-2. **AI spike** (needs the Claude key in `.env`):
-   - One model calls one typed tool and returns schema-valid JSON (Pydantic), through the provider-neutral interface.
-   - Use synthetic data only (personal key, D-16).
-   - Record the result in ADR-0002 and answer X-02.
-   - Alternative without a key: a local model through Ollama on the 12 GB GPU. This was not yet checked; the GPU-in-Docker check was interrupted.
+2. **AI spike with Claude** (when the account has credit): rerun `spikes/llm-tool-calling` against Claude (README has the command), compare with the local model, and update ADR-0002 and X-02.
 3. Update this file and the spec's §30 when Phase 0 is complete.
 
 ### Product owner actions (needed before Phase 1)
 
 | # | Action | Spec ref |
 |:---|:---|:---|
-| 1 | Get a Claude API key (personal, synthetic data only) | D-16 |
+| 1 | ~~Get a Claude API key~~ Key in `.env` and valid. **Still needed: buy prepaid credit** (Console → Settings → Billing) and set a spend limit | D-16 |
 | 2 | Formally appoint the internal engineer as engineering owner | §30.2, D-10 |
 | 3 | Agree targets F-1 to F-7 with the engineering owner | §1.2 |
 | 4 | Collect 2–3 reference hopper cases: pre-design input documents + issued drawings | §1.2 |
@@ -95,4 +101,5 @@ See ADR-0001. In short:
 ## 4. Open questions and notes
 
 - Taiga-S1 (Hugging Face CAD command model) was evaluated and **not adopted**: it drives the FreeCAD GUI step by step for simple PartDesign features and does not fit the template-first approach, drawings or document understanding.
-- The GPU-in-Docker check for local models was interrupted and is still open.
+- The laptop GPU (RTX 3500 Ada, 12 GB) was not used; the Ollama server on `ecsserver` is used instead.
+- `ecsserver` holds an unsuitable model (`jimscard/adult-film-screenwriter-nsfw`); recommend `ollama rm` if the server is used for company work. The platform must only use explicitly approved models.

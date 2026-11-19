@@ -5,7 +5,11 @@
   "workspaceFolder": "/workspace",
   "shutdownAction": "stopCompose",
   "features": {
-    "ghcr.io/devcontainers/features/node:1": { "version": "lts" }
+    "ghcr.io/devcontainers/features/node:1": { "version": "lts" },
+    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {}
+  },
+  "remoteEnv": {
+    "LOCAL_WORKSPACE_FOLDER": "${localWorkspaceFolder}"
   },
   "forwardPorts": ["postgres:5432", "nats:4222", "nats:8222"],
   "portsAttributes": {
