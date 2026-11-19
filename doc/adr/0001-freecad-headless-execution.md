@@ -1,6 +1,6 @@
 # ADR-0001: FreeCAD 1.1.4 headless execution for model and drawing generation
 
-- **Status:** Accepted (spike result; amended 2026-11-19 with Phase 1 worker findings 9–11)
+- **Status:** Accepted (spike result; amended 2026-11-19 with Phase 1 worker findings 9–12)
 - **Date:** 2026-11-18
 - **Related:** spec §12.6, §12.7, §12.8, §1.2 (F-6), D-02, D-25, X-01
 - **Evidence:** [spikes/freecad-headless](../../spikes/freecad-headless/)
@@ -43,6 +43,7 @@ Findings from the Phase 1 worker (19 Nov 2026):
 9. **GUI deadlock in offscreen mode.** The PDF export hung intermittently, and on some models every time. A native stack trace showed the GUI main thread deadlocked on itself: FreeCAD shows a notification pop-up, the offscreen Qt platform logs "This plugin does not support raise()", and FreeCAD routes that log message back into its notification area while holding the area's lock. Disabling the notification area (`NotificationAreaEnabled` and `NonIntrusiveNotificationsEnabled` set to false in the user preferences) removes it: 60 of 60 export runs passed on three models, against 0 of 6 with the notification area enabled. Earlier workarounds (pumping the event loop differently) only changed how often it happened.
 10. **Threaded views with the GUI.** Without the GUI, TechDraw computes hidden lines synchronously. With the GUI, each view runs in its own background thread and a document recompute starts all views at once. Python code must not pump the event loop (`Gui.updateGui()`) while waiting; the worker uses Qt timers in the real event loop and computes views one at a time. Face finding (only needed for hatching) is switched off.
 11. **Units.** FreeCAD's default unit schema shows lengths over 10 m in metres ("11.09"). The worker sets the `MmMin` schema, including the per-document unit system that FreeCAD 1.x applies when the GUI opens a file, and formats dimensions as whole millimetres.
+12. **Native file for users.** A model saved only by `freecadcmd` has no GUI document; one re-saved from the GUI phase had all solids hidden and the default camera (a 4 mm field of view), so it opened as an "empty" 3D view. The worker now shows the solids, sets a fitted isometric camera, closes the drawing tab and saves from the GUI phase; the platform checks the saved file (`native.plates_visible`, `native.camera_fitted`).
 
 ## Decision
 

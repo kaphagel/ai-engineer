@@ -4,6 +4,8 @@ An export that reports success is not proof of a correct output (ADR-0001), so t
 are opened and checked here, independently of the worker's own checks.
 """
 
+import re
+import zipfile
 from pathlib import Path
 from typing import Any
 
@@ -34,6 +36,7 @@ def evaluate(case: HopperCase, calc: HopperCalculation, result: dict[str, Any], 
     checks += _bom(case, calc, result["bom"])
     checks += _flat_patterns(result["bom"], result["flat_patterns"], out_dir)
     checks += _pdf(calc, case, out_dir / result["files"]["drawing_pdf"])
+    checks += _native_model(calc, out_dir / result["files"]["model"])
     return checks
 
 
@@ -156,6 +159,30 @@ def _pdf(calc: HopperCalculation, case: HopperCase, path: Path) -> list[CheckRes
             f"missing: {missing}" if missing else "all main dimensions present",
             "pdf",
         ),
+    ]
+
+
+def _native_model(calc: HopperCalculation, path: Path) -> list[CheckResult]:
+    """The native model must open in FreeCAD showing the 3D plates (not hidden, camera fitted)."""
+    src = "native model"
+    try:
+        with zipfile.ZipFile(path) as fcstd:
+            gui = fcstd.read("GuiDocument.xml").decode("utf-8")
+    except (OSError, KeyError, zipfile.BadZipFile) as exc:
+        return [_fail("native.gui_document", f"{path.name} has no readable GUI document: {exc}", src)]
+    hidden = []
+    for name in calc.panels:
+        object_name = name.replace("-", "_")
+        start = gui.find(f'<ViewProvider name="{object_name}"')
+        block = gui[start : gui.find("</ViewProvider>", start)] if start >= 0 else ""
+        visible = re.search(r'name="Visibility"[^>]*>\s*<Bool value="true"', block)
+        if not visible:
+            hidden.append(name)
+    camera = re.search(r"height ([0-9.]+)", gui)
+    fitted = camera is not None and float(camera.group(1)) > 100.0
+    return [
+        _check("native.plates_visible", not hidden, f"hidden: {hidden}" if hidden else "all plates visible", src),
+        _check("native.camera_fitted", fitted, f"camera height {camera.group(1) if camera else '?'} mm", src),
     ]
 
 

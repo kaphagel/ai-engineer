@@ -130,6 +130,7 @@ def _export():
         # Save again from the GUI, so that the file also contains the GUI document, like a file saved
         # by a user: it opens on the 3D model in an isometric view that fits the model, and the drawing
         # opens on double-click. (Saved by freecadcmd alone, the 3D camera showed a 4 mm field of view.)
+        _show_model(_state["doc"])
         _set_isometric_camera(_state["doc"])
         _state["page"].ViewObject.hide()
         _state["doc"].save()
@@ -138,6 +139,14 @@ def _export():
         )
     except Exception as exc:
         _fail(exc)
+
+
+def _show_model(doc):
+    """Make every solid visible in the 3D view (they were saved hidden after the GUI opened the file)."""
+    for obj in doc.Objects:
+        if obj.isDerivedFrom("Part::Feature"):
+            obj.Visibility = True
+            obj.ViewObject.show()
 
 
 def _set_isometric_camera(doc):
