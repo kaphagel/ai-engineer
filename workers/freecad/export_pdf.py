@@ -127,15 +127,48 @@ def _export():
             TechDrawGui.exportPageAsPdf(_state["page"], path)
         size = os.path.getsize(path) if os.path.exists(path) else 0
         ok = ready and size > 1000
-        # Save again from the GUI, so that the file also contains the GUI document (view providers,
-        # page), like a file saved by a user. A file saved by freecadcmd alone opened with an empty
-        # drawing for a user (FreeCAD 1.1.4, Windows).
+        # Save again from the GUI, so that the file also contains the GUI document, like a file saved
+        # by a user: it opens on the 3D model in an isometric view that fits the model, and the drawing
+        # opens on double-click. (Saved by freecadcmd alone, the 3D camera showed a 4 mm field of view.)
+        _set_isometric_camera(_state["doc"])
+        _state["page"].ViewObject.hide()
         _state["doc"].save()
         _finish(
             {"id": "export.pdf", "status": "pass" if ok else "fail", "detail": f"{size} bytes, views ready: {ready}"}
         )
     except Exception as exc:
         _fail(exc)
+
+
+def _set_isometric_camera(doc):
+    """Isometric camera fitted to the model. Set explicitly: fitAll() needs a rendered scene."""
+    import FreeCAD as App
+    import FreeCADGui as Gui
+
+    views = Gui.getDocument(doc.Name).mdiViewsOfType("Gui::View3DInventor")
+    shapes = [o.Shape for o in doc.Objects if o.isDerivedFrom("Part::Feature") and not o.Shape.isNull()]
+    if not views or not shapes:
+        return
+    box = shapes[0].BoundBox
+    for shape in shapes[1:]:
+        box.add(shape.BoundBox)
+    centre, size = box.Center, box.DiagonalLength
+    towards_viewer = App.Vector(1, -1, 1).normalize()
+    right = App.Vector(0, 0, 1).cross(towards_viewer).normalize()
+    up = towards_viewer.cross(right)
+    rotation = App.Rotation(
+        App.Matrix(
+            right.x, up.x, towards_viewer.x, 0, right.y, up.y, towards_viewer.y, 0, right.z, up.z, towards_viewer.z, 0
+        )
+    )
+    axis, position = rotation.Axis, centre + towards_viewer * (2 * size)
+    views[0].setCamera(
+        "#Inventor V2.1 ascii\nOrthographicCamera {\n viewportMapping ADJUST_CAMERA\n"
+        f" position {position.x:.3f} {position.y:.3f} {position.z:.3f}\n"
+        f" orientation {axis.x:.6f} {axis.y:.6f} {axis.z:.6f} {rotation.Angle:.6f}\n"
+        f" nearDistance {size:.3f}\n farDistance {3 * size:.3f}\n aspectRatio 1\n"
+        f" focalDistance {2 * size:.3f}\n height {1.1 * size:.3f}\n}}\n"
+    )
 
 
 QtCore.QTimer.singleShot(0, _start)
