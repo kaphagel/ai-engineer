@@ -1,0 +1,27 @@
+{
+  "name": "IAIEP",
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "dev",
+  "workspaceFolder": "/workspace",
+  "shutdownAction": "stopCompose",
+  "features": {
+    "ghcr.io/devcontainers/features/node:1": { "version": "lts" }
+  },
+  "forwardPorts": ["postgres:5432", "nats:4222", "nats:8222"],
+  "portsAttributes": {
+    "postgres:5432": { "label": "PostgreSQL" },
+    "nats:4222": { "label": "NATS" },
+    "nats:8222": { "label": "NATS monitoring" }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "charliermarsh.ruff",
+        "redhat.vscode-yaml",
+        "ms-azuretools.vscode-containers"
+      ]
+    }
+  },
+  "remoteUser": "vscode"
+}
