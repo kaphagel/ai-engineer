@@ -2,7 +2,7 @@
 
 **Last updated:** 2026-11-19 (Phase 1, hopper template step 1 done)
 **Current phase:** Phase 1 – Feasibility prototype (in progress)
-**State:** The hopper pipeline runs end to end (input set → FreeCAD worker → model, drawing PDF, STEP, flat-pattern DXF, BOM → checks and report) and is tested against a real reference delivery (ADR-0004). Template step 2 (tier beams and stiffeners) is done; next: step 3 (top panels and support interface). Testing uses the local Ollama model; the Anthropic account still has no credit.
+**State:** The hopper pipeline runs end to end (input set → FreeCAD worker → model, drawing PDF, STEP, flat-pattern DXF, BOM → checks and report) and is tested against a real reference delivery (ADR-0004). Template steps 2 (tier beams and stiffeners) and 3 (top beams and support interface) are done; next: support brackets, then bracing and accessories. Testing uses the local Ollama model; the Anthropic account still has no credit.
 
 To resume, open this repository in VS Code (Dev Container) and tell the coding agent:
 
@@ -88,13 +88,13 @@ Company data is **confidential (D-15)** and lives only in git-ignored folders: `
 - **Main reference: a complete issued ESP delivery (2025)** in `doc/drawings/`: all sub-deliveries (casing, hopper, internals, rapping, nozzles, support structure, walkways, penthouse) with delivery lists (PDF/XLSX), CATIA-exported DWG and PDF drawings with text, and 3D exports for some. Not yet received: the folders with customer documents and meeting notes, which are needed for the AI extraction test (F-3).
 - Earlier, smaller sets (fabric filter hoppers, an older pyramidal hopper DWG without dimensions) were reviewed and are superseded by the delivery above.
 
-### Phase 1: hopper pipeline and template — steps 1 and 2 done
+### Phase 1: hopper pipeline and template — steps 1 to 3 done
 
 - **FreeCAD worker** (`workers/freecad/`, ADR-0001 amended): two phases (headless build, then GUI offscreen PDF export). A deadlock of the FreeCAD GUI in offscreen mode was found and fixed (notification area; finding 9), verified with 60 of 60 export runs.
-- **Template `esp.hopper` 0.3.0** (ADR-0004): trough or pyramidal hopper from flat wall panels in tiers, with panel gaps, tier beams (channels) and vertical stiffeners (angles) from a profile catalogue in the input set. Outputs: native model, STEP AP242, drawing PDF (sheet and scale chosen automatically, title block, dimensions, parts list, notes, DRAFT marking), one DXF flat pattern per distinct panel, BOM.
+- **Template `esp.hopper` 0.4.0** (ADR-0004): trough or pyramidal hopper from flat wall panels in tiers, with panel and top gaps, tier beams and split top beams (channels), vertical stiffeners (angles), and support column stubs (H sections) with column and base plates at the support grid, all from a profile catalogue in the input set. Outputs: native model, STEP AP242, drawing PDF (sheet and scale chosen automatically, title block, dimensions, parts list, notes, DRAFT marking), one DXF flat pattern per distinct panel, BOM.
 - **Platform**: `iaiep.cad.worker` (runs a job in the worker container), `iaiep.checks`, and the ESP domain package `domains/esp` (`iaiep_esp.hopper`: input set with a source per value, independent calculation, checks, reference comparison, command `iaiep-hopper`).
-- **Checks** (64 on the reference case): worker drawing checks; model against the independent calculation (panel sizes, slopes, valley angle, capacity, interferences, beam and stiffener set and lengths); design criterion (reported as unapproved while it is a placeholder); BOM plate and profile counts and masses; each DXF read back; PDF text (status marking, main dimensions); native model opens with all parts visible.
-- **Reference result**: generated panel plates match the issued part drawings within 0.3–2.5 mm and their masses within 0.2 %, except the middle-tier end panel (+21.8 mm, joint allowance to be explained by the engineering owner). Beam and stiffener counts match; lengths within 1 mm apart from the same plate differences; welded panel net masses within −0.9 % to +0.7 %.
+- **Checks** (74 on the reference case): worker drawing checks; model against the independent calculation (panel sizes, slopes, valley angle, capacity, interferences, beams, stiffeners, column stubs and support plates); design criterion (reported as unapproved while it is a placeholder); BOM counts and masses of plates, profiles and support plates; each DXF read back; PDF text (status marking, main dimensions); native model opens with all parts visible.
+- **Reference result**: generated panel plates match the issued part drawings within 0.3–2.5 mm and their masses within 0.2 %, except the middle-tier end panel (+21.8 mm, joint allowance to be explained by the engineering owner). Beam and stiffener counts match; lengths within 2 mm apart from the same plate differences; welded wall panel net masses within −0.9 % to +0.7 %. Top panels: plates within 2 mm; beams, stubs and support plates match; the welded top panels are 24–36 % lighter because the support brackets are not modelled yet.
 
 Run:
 
@@ -109,8 +109,8 @@ uv run iaiep-hopper data/reference/esp-project/hopper_case.toml \
 
 ### Phase 1 (developer / coding agent)
 
-1. **Step 3:** top panels and the support interface (column grid, column plates).
-2. **Step 4:** bracing, inspection door, level studs; drawing set closer to the reference (sections, details).
+1. **Step 4:** support brackets (gusset plates and flat bars between the stubs and the top panels).
+2. **Step 5:** bracing, inspection door, level studs; drawing set closer to the reference (sections, details).
 3. Document extraction and AI extraction (Ollama) of the hopper input set, once the reference input documents are available (F-3).
 4. Store runs, inputs and check results in PostgreSQL with internal versions (spec §25 Phase 1).
 5. Repeatability measurement (F-6) and the remaining F-criteria.
@@ -132,7 +132,7 @@ Optional, when the Anthropic account has credit: rerun `spikes/llm-tool-calling`
 
 ## 4. Open questions and notes
 
-- For the engineering owner: stiffener top extensions, bottom clearances and beam end extensions differ per tier in the reference (template inputs, ADR-0004 step 2). Is there a rule behind them? Also: which profile standard (thicknesses, kg/m table) applies, and the steel density (7850 assumed)?
+- For the engineering owner: stiffener top extensions, bottom clearances and beam end extensions differ per tier in the reference (template inputs, ADR-0004 step 2). Is there a rule behind them? Also: which profile standard (thicknesses, kg/m table) applies, and the steel density (7850 assumed)? Is the hopper height measured to the underside of the top beams (assumed, with a 5 mm gap to the top plates)?
 - Drawing: a long general-tolerance text overlaps the scale field in the title block (cosmetic, to fix).
 - For the engineering owner: the reference shortens the middle-tier end panel by about 20 mm more than the template's joint rule, and the bottom-tier side panel by about 2.5 mm (ADR-0004). Which joint detail causes this?
 
