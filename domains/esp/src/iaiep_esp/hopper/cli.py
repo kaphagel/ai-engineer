@@ -23,12 +23,14 @@ from iaiep_esp.hopper.calculation import HopperCalculation, calculate
 from iaiep_esp.hopper.checks import evaluate
 from iaiep_esp.hopper.inputs import DRAFT_STATUS, HopperCase
 from iaiep_esp.hopper.reference import Difference, Reference, compare
+from iaiep_esp.hopper.rules import resolve
 
 JOB_SCHEMA_VERSION = 1
 
 
 def build_job(case: HopperCase) -> dict[str, Any]:
     """CAD job for the worker. The status is always DRAFT: the release gate is disabled (spec §30.2)."""
+    case = resolve(case)
     d = case.drawing
     return {
         "schema_version": JOB_SCHEMA_VERSION,
@@ -83,6 +85,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Invalid input: {exc}", file=sys.stderr)
         return 2
     try:
+        case = resolve(case)
         calc = calculate(case)
     except ValueError as exc:
         print(f"Invalid input: {exc}", file=sys.stderr)

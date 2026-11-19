@@ -43,6 +43,21 @@ Not yet modelled: brackets between the support stubs and the top panels, bracing
 - **Checks:** model against the calculation for top beams, stub positions and levels, and every column and base plate (size, position, height); BOM counts and masses; the support grid dimensions on the drawing and in the PDF text. Column and base plates do not stand on a panel plate, so their overlaps with plate edges (local cut-outs in reality) are reported as connection overlaps.
 - **Not modelled:** the bracket plates and flat bars between the stubs and the top panels, the pins on the column plates, the horizontal flat bars on the top panels.
 
+### Flexibility: rules with explicit overrides
+
+A parameter sweep (shorter, longer, narrower, wider, taller, lower, pyramidal, two and four tiers, thicker plate, end wall bending inside a tier) showed that the panel geometry adapts, but the stiffening did not: stiffener bays, the support grid and per-joint beam extensions were fixed numbers read from drawings. The sweep also found overlapping plates where an end wall bends inside a tier; they are now mitred on the bisector plane.
+
+Decision: the stiffening is defined by **engineering rules, with explicit values as overrides** (`iaiep_esp.hopper.rules`). The platform resolves the rules into explicit values before the calculation and the CAD job, so the worker and the independent calculation are unchanged and the report shows which values came from a rule.
+
+- **Stiffeners:** per wall type and tier position (bottom, middle, top) a maximum spacing, bottom clearance and top extension. On the side walls a heavier profile stands on every inner support column line; each stretch between the panel ends and the column lines is divided into the fewest equal bays not longer than the maximum spacing. Rules need a support grid symmetric about the centre.
+- **Tier beams:** one end extension for every joint, or one per joint. **Top beams:** split at the inner column lines, or at given positions.
+- **Supports:** corner columns at given offsets outside the outer plate faces, equal bays between them; or explicit grid lines.
+- An explicit stiffener layout for a wall type and tier always wins over the rule.
+- Rules are design decisions (E-02): a check reports layouts made by unapproved rules as `pass_unapproved_criterion`.
+- Rule values derived from the reference delivery are company know-how and stay in the confidential case file; the committed synthetic example uses invented values.
+
+On the reference case, the derived rules alone (no explicit layouts, rule-based grid) reproduce the issued support grid exactly and every stiffener count except one extra on the bottom side panels; welded wall panel masses stay within 0.0–0.7 %. They do not shorten stiffeners under the support brackets (step 4).
+
 ## Results on the reference case
 
 Generated panel plates compared with the issued part drawings (sizes as on the drawings):

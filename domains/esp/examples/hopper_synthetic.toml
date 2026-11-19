@@ -81,15 +81,12 @@ flange_thickness_mm = 13
 mass_per_m_kg = 42.6
 source = "synthetic: typical catalogue values, not checked"
 
-# Tier beams at every tier joint; stiffeners per wall and tier (bays = centre distances, symmetric
-# about the panel centreline; profiles left to right as seen from outside).
-[stiffening]
-
+# Tier beams at every tier joint.
 [stiffening.tier_beams]
 side_profile = "UPN200"
 end_profile = "UPN160"
-side_end_extensions_mm = [10, 10]
-end_end_extensions_mm = [10, 10]
+side_end_extension_mm = 10
+end_end_extension_mm = 10
 source = "synthetic"
 
 # Top beams on the top edge, split at the side support columns.
@@ -98,14 +95,15 @@ side_profile = "UPN200"
 end_profile = "UPN160"
 side_end_extension_mm = -10
 end_end_extension_mm = 5
-side_splits_mm = [-1375, 1375]
-end_splits_mm = []
+split_at_columns = true
 source = "synthetic"
 
-# Support column stubs at the support grid points on the hopper perimeter.
+# Support column stubs on the hopper perimeter: corner columns at the offsets outside the outer
+# plate faces, equal bays between them.
 [stiffening.supports]
-grid_x_mm = [-4125, -1375, 1375, 4125]
-grid_y_mm = [-2000, 2000]
+column_bays = 3
+corner_offset_x_mm = 125
+side_offset_y_mm = 100
 stub_profile = "HEB160"
 stub_length_mm = 700
 column_plate_top_above_top_mm = 8.5
@@ -116,60 +114,22 @@ base_plate_mm = [280, 280, 20]
 plate_material = "S355JR EN 10025-2"
 source = "synthetic"
 
-[[stiffening.stiffeners]]
-wall = "side"
-tier = 1
-bays_mm = [750, 850, 850, 850, 850, 750]
-profiles = ["L75x50x6", "L75x50x6", "L100x65x7", "L75x50x6", "L100x65x7", "L75x50x6", "L75x50x6"]
-bottom_clearance_mm = 0
-top_extension_mm = 10
-source = "synthetic"
-
-[[stiffening.stiffeners]]
-wall = "side"
-tier = 2
-bays_mm = [1000, 1100, 1100, 1100, 1000]
-profiles = ["L75x50x6", "L100x65x7", "L75x50x6", "L75x50x6", "L100x65x7", "L75x50x6"]
-bottom_clearance_mm = 20
-top_extension_mm = 10
-source = "synthetic"
-
-[[stiffening.stiffeners]]
-wall = "end"
-tier = 1
-bays_mm = [360]
-profiles = ["L75x50x6", "L75x50x6"]
-bottom_clearance_mm = 150
-top_extension_mm = 10
-source = "synthetic"
-
-[[stiffening.stiffeners]]
-wall = "end"
-tier = 2
-bays_mm = []
-profiles = ["L75x50x6"]
-bottom_clearance_mm = 0
-top_extension_mm = 10
-source = "synthetic"
-
-[[stiffening.stiffeners]]
-wall = "side"
-tier = 3
-bays_mm = [1100, 1200, 1300, 1200, 1100]
-profiles = ["L75x50x6", "L100x65x7", "L75x50x6", "L75x50x6", "L100x65x7", "L75x50x6"]
-bottom_clearance_mm = 0
-top_extension_mm = -20
-stops_below_top_mm = [0, 500, 0, 0, 500, 0]
-source = "synthetic"
-
-[[stiffening.stiffeners]]
-wall = "end"
-tier = 3
-bays_mm = [800, 800]
-profiles = ["L75x50x6", "L75x50x6", "L75x50x6"]
-bottom_clearance_mm = 0
-top_extension_mm = -20
-source = "synthetic"
+# Stiffener layout rules (used for every wall and tier without an explicit [[stiffening.stiffeners]]
+# layout): heavy stiffeners on the side walls at the support column lines, the rest evenly spaced at
+# most max_spacing_mm apart. Design decisions: not approved (spec §30.2, E-02).
+[stiffening.rules]
+standard_profile = "L75x50x6"
+column_profile = "L100x65x7"
+approved = false
+source = "synthetic example rule"
+spacing = [
+  { wall = "side", position = "bottom", max_spacing_mm = 900, bottom_clearance_mm = 0, top_extension_mm = 10 },
+  { wall = "side", position = "middle", max_spacing_mm = 1150, bottom_clearance_mm = 0, top_extension_mm = 10 },
+  { wall = "side", position = "top", max_spacing_mm = 1000, bottom_clearance_mm = 0, top_extension_mm = -20 },
+  { wall = "end", position = "bottom", max_spacing_mm = 700, bottom_clearance_mm = 150, top_extension_mm = 10 },
+  { wall = "end", position = "middle", max_spacing_mm = 1500, bottom_clearance_mm = 0, top_extension_mm = 10 },
+  { wall = "end", position = "top", max_spacing_mm = 1100, bottom_clearance_mm = 0, top_extension_mm = -20 },
+]
 
 # Engineering decisions: from the approved design basis only (spec §30.2, E-02/E-03).
 [design_basis]

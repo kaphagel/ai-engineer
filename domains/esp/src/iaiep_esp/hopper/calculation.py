@@ -79,6 +79,9 @@ class HopperCalculation:
 
 
 def calculate(case: HopperCase) -> HopperCalculation:
+    from iaiep_esp.hopper.rules import resolve  # rules use the panel sizes calculated here
+
+    case = resolve(case)
     params = case.parameters
     h = params.height_mm.value
     hv = params.end_wall_vertical_height_mm.value
@@ -184,7 +187,7 @@ def _profiles(case: HopperCase, pieces: list[_Piece], tiers: int, h: float) -> d
         for p in pieces:
             if p.tier < tiers and p.at_tier_top:
                 side = p.wall.startswith("Side")
-                extension = (tb.side_end_extensions_mm if side else tb.end_end_extensions_mm)[p.tier - 1]
+                extension = tb.extensions("side" if side else "end", tiers - 1)[p.tier - 1]
                 profile = tb.side_profile if side else tb.end_profile
                 add(f"Beam-{p.wall}-J{p.tier}", "beam", p.name, profile, 2 * p.half(p.z_high) + 2 * extension)
                 beam_panels.add(p.name)
@@ -249,6 +252,8 @@ def _support_points(case: HopperCase, pieces: list[_Piece], h: float) -> dict[st
     tiers = len(case.parameters.tier_heights_mm.value)
     top_piece = {p.wall: p.name for p in pieces if p.tier == tiers and p.at_tier_top}
     xs, ys = sup.grid_x_mm, sup.grid_y_mm
+    if xs is None or ys is None:
+        raise ValueError("support grid not resolved")
     points = {}
     for x in xs:
         corner = x in (xs[0], xs[-1])

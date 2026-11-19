@@ -77,6 +77,6 @@ def test_beams_and_stiffeners_agree_with_the_independent_worker_placement(
 
 def test_stiffening_must_use_profiles_of_the_right_kind(case: HopperCase) -> None:
     data = case.model_dump()
-    data["stiffening"]["stiffeners"][0]["profiles"][0] = "UPN200"
+    data["stiffening"]["rules"]["standard_profile"] = "UPN200"
     with pytest.raises(ValidationError, match="'UPN200' must be a angle"):
         HopperCase.model_validate(data)

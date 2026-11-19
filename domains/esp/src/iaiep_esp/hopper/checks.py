@@ -17,6 +17,7 @@ from pypdf import PdfReader
 from iaiep.checks import CheckResult, CheckStatus
 from iaiep_esp.hopper.calculation import HopperCalculation
 from iaiep_esp.hopper.inputs import DRAFT_STATUS, HopperCase
+from iaiep_esp.hopper.rules import RULE_SOURCE_PREFIX
 
 LENGTH_TOL_MM = 0.5
 ANGLE_TOL_DEG = 0.01
@@ -33,6 +34,7 @@ def evaluate(case: HopperCase, calc: HopperCalculation, result: dict[str, Any], 
     ]
     checks += _model_against_calculation(calc, result["measurements"])
     checks.append(_valley_criterion(case, calc))
+    checks += _stiffening_rules(case)
     checks += _bom(case, calc, result["bom"])
     checks += _flat_patterns(result["bom"], result["flat_patterns"], out_dir)
     checks += _pdf(calc, case, out_dir / result["files"]["drawing_pdf"])
@@ -159,6 +161,22 @@ def _valley_criterion(case: HopperCase, calc: HopperCalculation) -> CheckResult:
     return CheckResult(id="design.min_valley_angle", status=status, detail=detail, source="design criterion")
 
 
+def _stiffening_rules(case: HopperCase) -> list[CheckResult]:
+    """Stiffener layouts made by the rules are design decisions: reported as unapproved until approved."""
+    st = case.stiffening
+    if st is None or st.rules is None:
+        return []
+    made = [f"{s.wall} T{s.tier}" for s in st.stiffeners if s.source.startswith(RULE_SOURCE_PREFIX)]
+    if not made:
+        detail = "rules not used: every stiffener layout is given explicitly"
+        return [CheckResult(id="design.stiffening_rules", status=CheckStatus.PASS, detail=detail, source="design rule")]
+    detail = f"layouts from rules: {', '.join(made)} (source: {st.rules.source})"
+    if not st.rules.approved:
+        detail += "; rules NOT APPROVED"
+    status = CheckStatus.PASS if st.rules.approved else CheckStatus.PASS_UNAPPROVED
+    return [CheckResult(id="design.stiffening_rules", status=status, detail=detail, source="design rule")]
+
+
 def _bom(case: HopperCase, calc: HopperCalculation, bom: list[dict[str, Any]]) -> list[CheckResult]:
     src = "bom vs calculation"
     plates = [item for item in bom if item["kind"] == "plate"]
@@ -251,7 +269,7 @@ def _pdf(calc: HopperCalculation, case: HopperCase, path: Path) -> list[CheckRes
         "height": p.height_mm.value,
     }
     sup = case.stiffening.supports if case.stiffening else None
-    if sup is not None:
+    if sup is not None and sup.grid_x_mm and sup.grid_y_mm:
         expected["support grid length"] = sup.grid_x_mm[-1] - sup.grid_x_mm[0]
         expected["support grid width"] = sup.grid_y_mm[1] - sup.grid_y_mm[0]
     missing = [f"{name} {value:.0f}" for name, value in expected.items() if f"{value:.0f}" not in words]

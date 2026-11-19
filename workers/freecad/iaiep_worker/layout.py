@@ -6,6 +6,7 @@ from the left to the right of the front view.
 """
 
 import math
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 SHEETS: dict[str, tuple[float, float]] = {
@@ -103,18 +104,21 @@ def plan_layout(
     iso: tuple[float, float],
     side_panel: tuple[float, float],
     max_sheet: str = "A1",
+    margins: Mapping[str, float] | None = None,
 ) -> Layout:
     """Choose the largest preferred scale at which all views fit on a sheet up to `max_sheet`,
     using the smallest such sheet. Falls back to larger sheets only if nothing fits.
 
     View sizes are in model millimetres. `side_panel` (width, height) is reserved above the title block.
+    `margins` (paper mm) is the space kept around the front, top and side views for their dimensions.
     """
+    m = {name: DIMENSION_MARGIN for name in ("front", "top", "side")} | dict(margins or {})
     sheets = list(SHEETS)
     allowed = sheets[: sheets.index(max_sheet) + 1]
     for group in (allowed, sheets[len(allowed) :]):
         for denominator in SCALE_DENOMINATORS:
             for sheet in group:
-                layout = _try_layout(sheet, denominator, front, top, side, iso, side_panel)
+                layout = _try_layout(sheet, denominator, front, top, side, iso, side_panel, m)
                 if layout is not None:
                     return layout
     raise ValueError("The views do not fit on any sheet up to A0 at scale 1:200")
@@ -128,13 +132,15 @@ def _try_layout(
     side: tuple[float, float],
     iso: tuple[float, float],
     side_panel: tuple[float, float],
+    margins: Mapping[str, float],
 ) -> Layout | None:
     s = 1.0 / denominator
     fw, fh = front[0] * s, front[1] * s
     tw, th = top[0] * s, top[1] * s
     sw, sh = side[0] * s, side[1] * s
     iw, ih = iso[0] * s, iso[1] * s
-    m = DIMENSION_MARGIN
+    mf, mt, ms = margins["front"], margins["top"], margins["side"]
+    column_margin, row_margin = max(mf, mt), max(mf, ms)
 
     fr = frame(sheet)
     usable = Rect(fr.x0, fr.y0, fr.x1, fr.y1 - STATUS_STRIP_HEIGHT)
@@ -146,26 +152,26 @@ def _try_layout(
 
     column_width = max(fw, tw)
     row_height = max(fh, sh)
-    x_front = usable.x0 + m + column_width / 2
-    y_front = usable.y1 - m - row_height / 2
-    y_top = y_front - row_height / 2 - 2 * m - GAP - th / 2
-    x_side = x_front + column_width / 2 + 2 * m + GAP + sw / 2
+    x_front = usable.x0 + column_margin + column_width / 2
+    y_front = usable.y1 - row_margin - row_height / 2
+    y_top = y_front - row_height / 2 - row_margin - GAP - mt - th / 2
+    x_side = x_front + column_width / 2 + column_margin + GAP + ms + sw / 2
 
     ortho = {
         "front": (x_front, y_front, fw, fh),
         "top": (x_front, y_top, tw, th),
         "side": (x_side, y_front, sw, sh),
     }
-    rects = [Rect.centred(x, y, w, h, m) for x, y, w, h in ortho.values()]
+    rects = [Rect.centred(x, y, w, h, margins[name]) for name, (x, y, w, h) in ortho.items()]
     if not all(r.inside(usable) and not any(r.overlaps(z) for z in reserved) for r in rects):
         return None
 
     # Isometric view: right of the side view (top-aligned), else below the first row right of the top view.
-    below_row1 = y_front - row_height / 2 - m - GAP
+    below_row1 = y_front - row_height / 2 - row_margin - GAP
     candidates = [
-        (x_side + sw / 2 + m + GAP + iw / 2, usable.y1 - GAP / 2 - ih / 2),
-        (x_front + column_width / 2 + m + GAP + iw / 2, below_row1 - ih / 2),
-        (x_side + sw / 2 + m + GAP + iw / 2, below_row1 - ih / 2),
+        (x_side + sw / 2 + ms + GAP + iw / 2, usable.y1 - GAP / 2 - ih / 2),
+        (x_front + column_width / 2 + column_margin + GAP + iw / 2, below_row1 - ih / 2),
+        (x_side + sw / 2 + ms + GAP + iw / 2, below_row1 - ih / 2),
     ]
     for x_iso, y_iso in candidates:
         r_iso = Rect.centred(x_iso, y_iso, iw, ih, GAP / 2)

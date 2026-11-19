@@ -114,16 +114,33 @@ class TierBeams(_Model):
 
     side_profile: str
     end_profile: str
-    # Beam length = panel top edge + 2 x extension; one value per tier joint, bottom joint first.
-    side_end_extensions_mm: list[float]
-    end_end_extensions_mm: list[float]
+    # Beam length = panel top edge + 2 x extension. Either one value for every joint, or one value per
+    # tier joint (bottom joint first), for example as read from issued part drawings.
+    side_end_extension_mm: float | None = None
+    end_end_extension_mm: float | None = None
+    side_end_extensions_mm: list[float] | None = None
+    end_end_extensions_mm: list[float] | None = None
     source: str = Field(min_length=1)
 
     @model_validator(mode="after")
-    def _not_negative(self) -> Self:
-        if any(x < 0 for x in [*self.side_end_extensions_mm, *self.end_end_extensions_mm]):
-            raise ValueError("beam end extensions must not be negative")
+    def _one_way(self) -> Self:
+        for wall, single, per_joint in (
+            ("side", self.side_end_extension_mm, self.side_end_extensions_mm),
+            ("end", self.end_end_extension_mm, self.end_end_extensions_mm),
+        ):
+            if (single is None) == (per_joint is None):
+                raise ValueError(f"give either {wall}_end_extension_mm or {wall}_end_extensions_mm")
+            if any(x < 0 for x in [single or 0.0, *(per_joint or [])]):
+                raise ValueError("beam end extensions must not be negative")
         return self
+
+    def extensions(self, wall: str, joints: int) -> list[float]:
+        single, per_joint = (
+            (self.side_end_extension_mm, self.side_end_extensions_mm)
+            if wall == "side"
+            else (self.end_end_extension_mm, self.end_end_extensions_mm)
+        )
+        return list(per_joint) if per_joint is not None else [single or 0.0] * joints
 
 
 class StiffenerLayout(_Model):
@@ -163,14 +180,26 @@ class TopBeams(_Model):
     end_end_extension_mm: float
     side_splits_mm: list[float] = []  # joint positions along the beam, from the centreline
     end_splits_mm: list[float] = []
+    split_at_columns: bool = False  # side beams split at the inner support column lines instead
     source: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _one_way(self) -> Self:
+        if self.split_at_columns and self.side_splits_mm:
+            raise ValueError("give either side_splits_mm or split_at_columns")
+        return self
 
 
 class Supports(_Model):
     """Support column stubs at the support grid points on the hopper perimeter (corners on the end walls)."""
 
-    grid_x_mm: list[float] = Field(min_length=2)  # column lines along the hopper, from inlet to outlet
-    grid_y_mm: list[float] = Field(min_length=2, max_length=2)
+    # Either the column lines (grid_x_mm along the hopper, grid_y_mm the two lines across), or a rule:
+    # equal bays between corner columns placed at the given offsets outside the outer plate faces.
+    grid_x_mm: list[float] | None = Field(default=None, min_length=2)
+    grid_y_mm: list[float] | None = Field(default=None, min_length=2, max_length=2)
+    column_bays: int | None = Field(default=None, ge=1)
+    corner_offset_x_mm: float | None = None
+    side_offset_y_mm: float | None = None
     stub_profile: str
     stub_length_mm: float = Field(gt=0)
     column_plate_top_above_top_mm: float  # top of the column plate above the hopper top
@@ -183,12 +212,52 @@ class Supports(_Model):
 
     @model_validator(mode="after")
     def _grid(self) -> Self:
-        if self.grid_x_mm != sorted(self.grid_x_mm) or len(set(self.grid_x_mm)) != len(self.grid_x_mm):
+        explicit = self.grid_x_mm is not None and self.grid_y_mm is not None
+        rule = None not in (self.column_bays, self.corner_offset_x_mm, self.side_offset_y_mm)
+        if explicit == rule:
+            raise ValueError(
+                "give either grid_x_mm and grid_y_mm, or column_bays, corner_offset_x_mm, side_offset_y_mm"
+            )
+        if self.grid_x_mm is not None and (
+            self.grid_x_mm != sorted(self.grid_x_mm) or len(set(self.grid_x_mm)) != len(self.grid_x_mm)
+        ):
             raise ValueError("grid_x_mm must be increasing")
-        if self.grid_y_mm[0] >= 0 or self.grid_y_mm[1] <= 0:
+        if self.grid_y_mm is not None and (self.grid_y_mm[0] >= 0 or self.grid_y_mm[1] <= 0):
             raise ValueError("grid_y_mm needs one line on each side of the hopper axis")
         if any(v <= 0 for v in [*self.corner_column_plate_mm, *self.side_column_plate_mm, *self.base_plate_mm]):
             raise ValueError("plate sizes must be positive")
+        return self
+
+
+TierPosition = Literal["bottom", "middle", "top"]
+
+
+class SpacingRule(_Model):
+    """Stiffeners on one wall type in the bottom, middle or top tiers: as few as possible, evenly spaced
+    at most `max_spacing_mm` apart between the panel ends and the support column lines."""
+
+    wall: Literal["side", "end"]
+    position: TierPosition
+    max_spacing_mm: float = Field(gt=0)
+    bottom_clearance_mm: float = Field(ge=0)
+    top_extension_mm: float
+
+
+class StiffeningRules(_Model):
+    """Engineering rules for the stiffener layout (spec §30.2, E-02): used for every wall and tier that
+    has no explicit layout. Reported as not approved until the engineering owner approves them."""
+
+    standard_profile: str
+    column_profile: str | None = None  # on the side walls at the support column lines
+    spacing: list[SpacingRule] = Field(min_length=1)
+    approved: bool
+    source: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _unique(self) -> Self:
+        keys = [(r.wall, r.position) for r in self.spacing]
+        if len(keys) != len(set(keys)):
+            raise ValueError("one spacing rule per wall type and tier position")
         return self
 
 
@@ -196,7 +265,8 @@ class Stiffening(_Model):
     tier_beams: TierBeams | None = None
     top_beams: TopBeams | None = None
     supports: Supports | None = None
-    stiffeners: list[StiffenerLayout] = []
+    stiffeners: list[StiffenerLayout] = []  # explicit layouts; they override the rules
+    rules: StiffeningRules | None = None
 
 
 class DesignBasis(_Model):
@@ -246,6 +316,8 @@ class HopperCase(_Model):
             wanted += [(st.top_beams.side_profile, "channel"), (st.top_beams.end_profile, "channel")]
         if st.supports is not None:
             wanted.append((st.supports.stub_profile, "h_section"))
+        if st.rules is not None:
+            wanted += [(p, "angle") for p in (st.rules.standard_profile, st.rules.column_profile) if p is not None]
         for name, kind in wanted:
             if name not in self.profiles or self.profiles[name].kind != kind:
                 errors.append(f"profile {name!r} must be a {kind} in [profiles]")
@@ -253,7 +325,7 @@ class HopperCase(_Model):
         if st.tier_beams is not None:
             beams = st.tier_beams
             for wall, values in (("side", beams.side_end_extensions_mm), ("end", beams.end_end_extensions_mm)):
-                if len(values) != tiers - 1:
+                if values is not None and len(values) != tiers - 1:
                     errors.append(f"{wall} beam end extensions: {len(values)} given, {tiers - 1} tier joints")
         seen = set()
         for layout in st.stiffeners:

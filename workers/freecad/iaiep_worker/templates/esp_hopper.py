@@ -389,6 +389,11 @@ def _write_flat_patterns(bom, meta, out_dir):
 
 # --- drawing ---------------------------------------------------------------------------------
 
+DIM_ROW = 10.0  # paper mm between dimension rows
+DIM_FIRST = 8.0  # first dimension row beyond the view
+DIM_TEXT = 7.0  # room for the text beyond the outermost row
+
+
 PARTS_LIST_HEADER = ["Item", "Mark", "Qty", "Description", "Section", "Mass kg"]
 PARTS_LIST_COLUMNS = [12.0, 14.0, 10.0, 62.0, 42.0, 22.0]
 
@@ -420,6 +425,7 @@ def _make_drawing(doc, parts, spec, stiffening, material, meta, bom, m):
         side=(ey, ez),
         iso=lay.projected_size((ex, ey, ez), iso_dir, iso_x),
         side_panel=(panel_w, panel_h),
+        margins=_dimension_margins(stiffening),
     )
     scale = 1.0 / layout.scale_denominator
     dw.log(f"layout {layout.sheet} {layout.scale_label}")
@@ -470,11 +476,11 @@ def _make_drawing(doc, parts, spec, stiffening, material, meta, bom, m):
     top, front, side = views["top"], views["front"], views["side"]
     th, tw, fw, sw = pv["top"].height, pv["top"].width, pv["front"].width, pv["side"].width
     dims = [
-        ("top_length_inside", "DistanceX", top, (-lt, wt, h), (lt, wt, h), 2 * lt, th / 2 + 8),
-        ("top_width_inside", "DistanceY", top, (lt, -wt, h), (lt, wt, h), 2 * wt, tw / 2 + 8),
-        ("slot_length_inside", "DistanceX", top, (-ls, -ws, 0), (ls, -ws, 0), 2 * ls, -th / 2 - 8),
-        ("slot_width_inside", "DistanceY", top, (-ls, -ws, 0), (-ls, ws, 0), 2 * ws, -tw / 2 - 8),
-        ("height", "DistanceY", front, (ls, -ws, 0), (lt, -wt, h), h, fw / 2 + 18),
+        ("top_length_inside", "DistanceX", top, (-lt, wt, h), (lt, wt, h), 2 * lt, th / 2 + DIM_FIRST),
+        ("top_width_inside", "DistanceY", top, (lt, -wt, h), (lt, wt, h), 2 * wt, tw / 2 + DIM_FIRST),
+        ("slot_length_inside", "DistanceX", top, (-ls, -ws, 0), (ls, -ws, 0), 2 * ls, -th / 2 - DIM_FIRST),
+        ("slot_width_inside", "DistanceY", top, (-ls, -ws, 0), (-ls, ws, 0), 2 * ws, -tw / 2 - DIM_FIRST),
+        ("height", "DistanceY", front, (ls, -ws, 0), (lt, -wt, h), h, fw / 2 + DIM_FIRST + DIM_ROW),
     ]
     if hv > 0:
         dims.append(
@@ -485,20 +491,30 @@ def _make_drawing(doc, parts, spec, stiffening, material, meta, bom, m):
                 (ls, -ws, 0),
                 (ls, -shape.half_width(hv), hv),
                 hv,
-                fw / 2 + 8,
+                fw / 2 + DIM_FIRST,
             )
         )
     z = 0.0
     for tier, tier_height in enumerate(spec.tier_heights, start=1):
         a, b = (0.0, -shape.half_width(z), z), (0.0, -shape.half_width(z + tier_height), z + tier_height)
-        dims.append((f"tier_{tier}_height", "DistanceY", side, a, b, tier_height, sw / 2 + 8))
+        dims.append((f"tier_{tier}_height", "DistanceY", side, a, b, tier_height, sw / 2 + DIM_FIRST))
         z += tier_height
     sup = stiffening.supports
     if sup is not None:
         level = spec.height + sup.top_above_hopper_top
         gx, (y0, y1) = sup.grid_x, sup.grid_y
         for k, (xa, xb) in enumerate(itertools.pairwise(gx), start=1):
-            dims.append((f"support_bay_{k}", "DistanceX", top, (xa, y1, level), (xb, y1, level), xb - xa, th / 2 + 18))
+            dims.append(
+                (
+                    f"support_bay_{k}",
+                    "DistanceX",
+                    top,
+                    (xa, y1, level),
+                    (xb, y1, level),
+                    xb - xa,
+                    th / 2 + DIM_FIRST + DIM_ROW,
+                )
+            )
         dims.append(
             (
                 "support_grid_length",
@@ -507,11 +523,19 @@ def _make_drawing(doc, parts, spec, stiffening, material, meta, bom, m):
                 (gx[0], y1, level),
                 (gx[-1], y1, level),
                 gx[-1] - gx[0],
-                th / 2 + 28,
+                th / 2 + DIM_FIRST + 2 * DIM_ROW,
             )
         )
         dims.append(
-            ("support_grid_width", "DistanceY", top, (gx[-1], y0, level), (gx[-1], y1, level), y1 - y0, tw / 2 + 18)
+            (
+                "support_grid_width",
+                "DistanceY",
+                top,
+                (gx[-1], y0, level),
+                (gx[-1], y1, level),
+                y1 - y0,
+                tw / 2 + DIM_FIRST + DIM_ROW,
+            )
         )
     for name, kind, view, a, b, expected, offset in dims:
         checks.append(dw.add_distance(doc, page, view, name, kind, a, b, expected, offset))
@@ -534,6 +558,16 @@ def _make_drawing(doc, parts, spec, stiffening, material, meta, bom, m):
         "standard_profile": "ISO (EN ISO)",
         "notes": notes,
         "checks": checks,
+    }
+
+
+def _dimension_margins(stiffening):
+    """Space around each view for its dimension rows (see the offsets in _make_drawing)."""
+    top_rows = 3 if stiffening.supports is not None else 1
+    return {
+        "front": DIM_FIRST + DIM_ROW + DIM_TEXT,
+        "top": DIM_FIRST + DIM_ROW * (top_rows - 1) + DIM_TEXT,
+        "side": DIM_FIRST + DIM_TEXT,
     }
 
 

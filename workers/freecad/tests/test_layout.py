@@ -28,3 +28,13 @@ def test_views_fit_inside_the_frame_and_clear_of_the_title_block() -> None:
 def test_too_large_for_any_sheet_is_an_error() -> None:
     with pytest.raises(ValueError, match="do not fit"):
         layout_for((400000.0, 4000.0, 4000.0), (162.0, 90.0))
+
+
+def test_views_keep_the_room_their_dimensions_need() -> None:
+    x, y, z = 8000.0, 3800.0, 4200.0
+    views = ((x, z), (x, y), (y, z), lay.projected_size((x, y, z), *ISO))
+    plain = lay.plan_layout(*views, side_panel=(180.0, 150.0))
+    wide = lay.plan_layout(*views, side_panel=(180.0, 150.0), margins={"top": 18.0})
+    assert (wide.sheet, wide.scale_denominator) == (plain.sheet, plain.scale_denominator)
+    # The top view moves down by the extra margin (18 instead of 15 mm).
+    assert wide.views["top"].y == pytest.approx(plain.views["top"].y - 3.0)
