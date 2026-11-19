@@ -1,7 +1,8 @@
 """Second worker phase: export the drawing page of the saved model as PDF.
 
 Runs in the FreeCAD GUI binary with QT_QPA_PLATFORM=offscreen, because PDF export exists only in
-TechDrawGui (ADR-0001). Adds the export check to $IAIEP_JOB_DIR/out/result.json.
+TechDrawGui (ADR-0001). Adds the export check to $IAIEP_JOB_DIR/out/result.json and saves the model
+again, now including its GUI document.
 
 The image must have FreeCAD's notification area disabled (configure_freecad.py); otherwise the GUI
 deadlocks intermittently (ADR-0001, finding 9). In addition, as a precaution, this script never pumps
@@ -126,6 +127,10 @@ def _export():
             TechDrawGui.exportPageAsPdf(_state["page"], path)
         size = os.path.getsize(path) if os.path.exists(path) else 0
         ok = ready and size > 1000
+        # Save again from the GUI, so that the file also contains the GUI document (view providers,
+        # page), like a file saved by a user. A file saved by freecadcmd alone opened with an empty
+        # drawing for a user (FreeCAD 1.1.4, Windows).
+        _state["doc"].save()
         _finish(
             {"id": "export.pdf", "status": "pass" if ok else "fail", "detail": f"{size} bytes, views ready: {ready}"}
         )
