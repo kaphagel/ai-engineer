@@ -16,4 +16,11 @@ uv run mypy              # type check
 uv run pytest            # tests
 ```
 
-Conventions: [doc/adr/0003-repository-conventions.md](doc/adr/0003-repository-conventions.md).
+Hopper pipeline (Phase 1), with synthetic example data:
+
+```bash
+docker build --build-arg UID=$(id -u) -t iaiep-freecad-worker:dev workers/freecad
+uv run iaiep-hopper domains/esp/examples/hopper_synthetic.toml --out out/hopper-synthetic
+```
+
+Conventions: [doc/adr/0003-repository-conventions.md](doc/adr/0003-repository-conventions.md). Company reference data is confidential and lives only in the git-ignored `doc/drawings/` and `data/reference/` folders.

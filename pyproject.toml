@@ -4,14 +4,23 @@ version = "0.1.0"
 description = "IAIEP - Industrial AI Engineering Platform"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
-dependencies = []
+dependencies = [
+    "pydantic>=2.8",
+]
 
 [dependency-groups]
 dev = [
+    "iaiep-esp",
     "mypy>=1.13",
     "pytest>=8.3",
     "ruff>=0.8",
 ]
+
+[tool.uv.workspace]
+members = ["domains/esp"]
+
+[tool.uv.sources]
+iaiep-esp = { workspace = true }
 
 [build-system]
 requires = ["uv_build>=0.9,<0.14"]
@@ -26,11 +35,37 @@ extend-exclude = ["spikes"]
 [tool.ruff.lint]
 select = ["E", "W", "F", "I", "B", "UP", "SIM", "RUF"]
 
+[tool.ruff.lint.isort]
+known-first-party = ["iaiep", "iaiep_esp", "iaiep_worker"]
+
+[tool.ruff.lint.per-file-ignores]
+# FreeCAD worker code: FreeCAD's Python is 3.11, and the GUI binary needs late imports.
+"workers/freecad/**" = ["UP", "E402"]
+
 [tool.mypy]
 python_version = "3.12"
 strict = true
-files = ["src", "tests"]
+plugins = ["pydantic.mypy"]
+mypy_path = "workers/freecad"
+files = [
+    "src",
+    "tests",
+    "domains/esp/src",
+    "domains/esp/tests",
+    # Pure-Python worker modules; the others need FreeCAD and are checked by the integration test.
+    "workers/freecad/iaiep_worker/hopper_geometry.py",
+    "workers/freecad/iaiep_worker/layout.py",
+    "workers/freecad/iaiep_worker/panel.py",
+    "workers/freecad/iaiep_worker/dxf.py",
+    "workers/freecad/tests",
+]
+
+[[tool.mypy.overrides]]
+module = ["iaiep_worker"]
+follow_imports = "skip"
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
-addopts = ["--strict-markers", "--import-mode=importlib"]
+testpaths = ["tests", "domains/esp/tests", "workers/freecad/tests"]
+pythonpath = ["workers/freecad"]
+addopts = ["--strict-markers", "--import-mode=importlib", "-m", "not integration"]
+markers = ["integration: needs Docker and the FreeCAD worker image (run with -m integration)"]

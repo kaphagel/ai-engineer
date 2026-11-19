@@ -1,0 +1,36 @@
+# Hopper input set: SYNTHETIC example data (spec D-16: safe for any model provider).
+# Values are realistic in size but invented; they do not describe a real project.
+schema_version = 1
+data_classification = "public"
+
+[parameters]
+top_length_outside_mm = { value = 8000, source = "synthetic" }
+top_width_outside_mm = { value = 3800, source = "synthetic" }
+slot_length_inside_mm = { value = 6500, source = "synthetic" }
+slot_width_inside_mm = { value = 400, source = "synthetic" }
+height_mm = { value = 4200, source = "synthetic" }
+end_wall_vertical_height_mm = { value = 1200, source = "synthetic" }
+tier_heights_mm = { value = [1200, 1500, 1500], source = "synthetic" }
+plate_thickness_mm = { value = 5, source = "synthetic" }
+panel_gap_mm = { value = 20, source = "synthetic" }
+
+[material]
+designation = "S235JR"
+standard = "EN 10025-2"
+density_kg_m3 = { value = 7850, source = "synthetic" }
+
+# Engineering decisions: from the approved design basis only (spec §30.2, E-02/E-03).
+[design_basis]
+general_tolerances = { value = "TBC (E-03)", source = "placeholder" }
+standard_notes = { value = [], source = "placeholder" }
+min_valley_angle_deg = { value = 55, source = "placeholder, not an approved design criterion", approved = false }
+
+[drawing]
+title = "ESP HOPPER"
+subtitle = "Synthetic example"
+drawing_number = "P0000-ESP-HOP-DWG-0001"
+revision = "A"
+date = "2026-11-19"
+author = "iaiep"
+department = "Engineering"
+owner = "Synthetic data"

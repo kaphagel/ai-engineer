@@ -1,6 +1,6 @@
 # ADR-0001: FreeCAD 1.1.4 headless execution for model and drawing generation
 
-- **Status:** Accepted (spike result)
+- **Status:** Accepted (spike result; amended 2026-11-19 with Phase 1 worker findings 9–11)
 - **Date:** 2026-11-18
 - **Related:** spec §12.6, §12.7, §12.8, §1.2 (F-6), D-02, D-25, X-01
 - **Evidence:** [spikes/freecad-headless](../../spikes/freecad-headless/)
@@ -38,10 +38,17 @@ The specification requires CAD workers that generate models and drawings without
 7. **Fonts.** The SVG output depends on FreeCAD's drawing font (osifont); viewers without it render text wider, so the drawing number overflows its field. The PDF embeds the font and renders correctly. PDF is the issue format (§12.7); SVG is for previews only.
 8. **DXF scope.** The DXF page export contains geometry and dimensions but no frame or title block. DXF is therefore suitable for geometry exchange and flat patterns, not as an issued drawing.
 
+Findings from the Phase 1 worker (19 Nov 2026):
+
+9. **GUI deadlock in offscreen mode.** The PDF export hung intermittently, and on some models every time. A native stack trace showed the GUI main thread deadlocked on itself: FreeCAD shows a notification pop-up, the offscreen Qt platform logs "This plugin does not support raise()", and FreeCAD routes that log message back into its notification area while holding the area's lock. Disabling the notification area (`NotificationAreaEnabled` and `NonIntrusiveNotificationsEnabled` set to false in the user preferences) removes it: 60 of 60 export runs passed on three models, against 0 of 6 with the notification area enabled. Earlier workarounds (pumping the event loop differently) only changed how often it happened.
+10. **Threaded views with the GUI.** Without the GUI, TechDraw computes hidden lines synchronously. With the GUI, each view runs in its own background thread and a document recompute starts all views at once. Python code must not pump the event loop (`Gui.updateGui()`) while waiting; the worker uses Qt timers in the real event loop and computes views one at a time. Face finding (only needed for hatching) is switched off.
+11. **Units.** FreeCAD's default unit schema shows lengths over 10 m in metres ("11.09"). The worker sets the `MmMin` schema, including the per-document unit system that FreeCAD 1.x applies when the GUI opens a file, and formats dimensions as whole millimetres.
+
 ## Decision
 
 - The CAD worker runs FreeCAD 1.1.4 from the official AppImage, extracted into a container image with a non-root user. The AppImage is verified by its published SHA-256 checksum.
-- Drawing generation (PDF/SVG) runs the FreeCAD GUI binary with `QT_QPA_PLATFORM=offscreen`, showing the page and waiting for view computation before export. Xvfb is not needed. For simplicity the Phase 1 worker may run all CAD steps in this mode in one process.
+- The worker runs a job in two phases (`workers/freecad/`): `freecadcmd` builds the model, measurements, flat patterns, drawing page, drawing checks, STEP and FCStd (synchronous, no GUI); then the GUI binary with `QT_QPA_PLATFORM=offscreen` only opens the saved model and exports the PDF (findings 9 and 10). Xvfb is not needed.
+- The worker image writes FreeCAD's user preferences at build time (notification area off, face finding off, mm units), and the build fails if they are missing.
 - STEP is written as AP242 through `Part.setStaticValue`.
 - Issued drawings are PDF. DXF is used for geometry and flat patterns.
 - The hopper template models individual plates (finding 3).

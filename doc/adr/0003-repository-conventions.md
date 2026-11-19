@@ -26,7 +26,7 @@ Phase 0 requires coding standards, a testing strategy, CI, and conventions for v
 | Lint | Ruff | `uv run ruff check` |
 | Format | Ruff | `uv run ruff format` |
 | Type check | mypy (strict) | `uv run mypy` |
-| Tests | pytest | `uv run pytest` |
+| Tests | pytest | `uv run pytest` (unit); `uv run pytest -m integration` (needs Docker and the worker image) |
 
 GitHub Actions (`.github/workflows/ci.yml`) runs all of these on every push to `main` and on every pull request. mypy was chosen as the type checker of record; Pylance in VS Code is used for editing only.
 
@@ -53,4 +53,5 @@ GitHub Actions (`.github/workflows/ci.yml`) runs all of these on every push to `
 ## Consequences
 
 - New modules must pass Ruff and strict mypy from the start.
-- FreeCAD worker code has its own checks, because it runs on a different Python version. These are defined when the worker is created in Phase 1.
+- FreeCAD worker code runs on FreeCAD's Python 3.11. Ruff lints it; its pure-Python modules are type-checked and unit-tested with the platform; the modules that need FreeCAD are covered by the integration test (`uv run pytest -m integration`, needs Docker and the worker image).
+- Domain packages are uv workspace members (`domains/<domain>`), depending on the core, never the reverse.

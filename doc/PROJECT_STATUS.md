@@ -1,8 +1,8 @@
 # IAIEP – Project status and handoff
 
-**Last updated:** 2026-11-19 (Phase 0 complete)
-**Current phase:** Phase 1 – Feasibility prototype (starting, with synthetic data)
-**State:** Phase 0 is complete: spikes done, project tooling and CI in place (ADR-0003). Next: the parametric hopper template with synthetic data. Testing uses the local Ollama model; the Anthropic account still has no credit.
+**Last updated:** 2026-11-19 (Phase 1, hopper template step 1 done)
+**Current phase:** Phase 1 – Feasibility prototype (in progress)
+**State:** The hopper pipeline runs end to end (input set → FreeCAD worker → model, drawing PDF, STEP, flat-pattern DXF, BOM → checks and report) and is tested against a real reference delivery (ADR-0004). Next: template step 2 (tier beams and stiffeners). Testing uses the local Ollama model; the Anthropic account still has no credit.
 
 To resume, open this repository in VS Code (Dev Container) and tell the coding agent:
 
@@ -18,6 +18,8 @@ To resume, open this repository in VS Code (Dev Container) and tell the coding a
 | [adr/0001-freecad-headless-execution.md](adr/0001-freecad-headless-execution.md) | FreeCAD spike results and decisions. |
 | [adr/0002-llm-tool-calling.md](adr/0002-llm-tool-calling.md) | AI tool-calling spike results and decisions. |
 | [adr/0003-repository-conventions.md](adr/0003-repository-conventions.md) | Layout, tooling, coding, testing and schema conventions. |
+| [adr/0004-hopper-template-wall-panels.md](adr/0004-hopper-template-wall-panels.md) | Hopper template from wall panels; comparison with the reference delivery. |
+| [../workers/freecad/README.md](../workers/freecad/README.md) | FreeCAD worker: build, run, layout. |
 | [archive/IAIEP_Comprehensive_Specification_v1.1.md](archive/IAIEP_Comprehensive_Specification_v1.1.md) | Superseded version, kept for history only. |
 | [../spikes/freecad-headless/README.md](../spikes/freecad-headless/README.md) | How to rerun the FreeCAD spike. |
 
@@ -79,41 +81,59 @@ See ADR-0002. In short:
 
 See ADR-0003. `pyproject.toml` with uv (`uv.lock`), Ruff (lint and format), mypy (strict) and pytest; package `src/iaiep/` with the first module `iaiep.config` (model endpoint settings from environment variables). GitHub Actions CI runs all checks on every push and pull request. The Dev Container runs `uv sync` on creation. Spec §30 stays the decision register (no separate `open-decisions.md`).
 
-### Reference drawings (received 19 Nov 2026)
+### Reference data (received 19 Nov 2026)
 
-Company drawings are stored in `doc/drawings/`, which is **git-ignored** (confidential, D-15). Only use them with local models.
+Company data is **confidential (D-15)** and lives only in git-ignored folders: `doc/drawings/` (as received) and `data/reference/` (input sets and reference values derived from it). Use it only with local tools and models (Ollama), never with a cloud model.
 
-- `ESP Hopper/` (5 sheets, DWG, 2012): pyramidal hoppers with stiffener rings, vertical stiffeners and support frame; note "Plate thickness 5 mm". Exported from CATIA as flattened lines: no text objects, no dimensions, sheet scale. Useful as a shape and layout reference only. The title block suggests a fabric filter hopper; to be confirmed.
-- Two earlier fabric filter hopper sets (one CATIA PDF with text and delivery lists, one scanned plot PDF) were reviewed and then removed from the folder.
-- Missing for Phase 1: the **input documents** (customer specification, design basis) for a reference case, and dimensioned drawings or a STEP export.
+- **Main reference: a complete issued ESP delivery (2025)** in `doc/drawings/`: all sub-deliveries (casing, hopper, internals, rapping, nozzles, support structure, walkways, penthouse) with delivery lists (PDF/XLSX), CATIA-exported DWG and PDF drawings with text, and 3D exports for some. Not yet received: the folders with customer documents and meeting notes, which are needed for the AI extraction test (F-3).
+- Earlier, smaller sets (fabric filter hoppers, an older pyramidal hopper DWG without dimensions) were reviewed and are superseded by the delivery above.
+
+### Phase 1: hopper pipeline and template — step 1 done
+
+- **FreeCAD worker** (`workers/freecad/`, ADR-0001 amended): two phases (headless build, then GUI offscreen PDF export). A deadlock of the FreeCAD GUI in offscreen mode was found and fixed (notification area; finding 9), verified with 60 of 60 export runs.
+- **Template `esp.hopper` 0.2.0** (ADR-0004): trough or pyramidal hopper from flat wall panels in tiers, with panel gaps. Outputs: native model, STEP AP242, drawing PDF (sheet and scale chosen automatically, title block, dimensions, parts list, notes, DRAFT marking), one DXF flat pattern per distinct panel, BOM.
+- **Platform**: `iaiep.cad.worker` (runs a job in the worker container), `iaiep.checks`, and the ESP domain package `domains/esp` (`iaiep_esp.hopper`: input set with a source per value, independent calculation, checks, reference comparison, command `iaiep-hopper`).
+- **Checks** (57 on the reference case): worker drawing checks; model against the independent calculation (panel sizes, slopes, valley angle, capacity, interferences); design criterion (reported as unapproved while it is a placeholder); BOM count and mass; each DXF read back; PDF text (status marking, main dimensions).
+- **Reference result**: generated panel plates match the issued part drawings within 0.3–2.5 mm and their masses within 0.2 %, except the middle-tier end panel (+21.8 mm, joint allowance to be explained by the engineering owner).
+
+Run:
+
+```bash
+docker build --build-arg UID=$(id -u) -t iaiep-freecad-worker:dev workers/freecad
+uv run iaiep-hopper domains/esp/examples/hopper_synthetic.toml --out out/hopper-synthetic
+uv run iaiep-hopper data/reference/esp-project/hopper_case.toml \
+    --reference data/reference/esp-project/hopper_reference.toml --out out/hopper-reference
+```
 
 ## 3. Next steps
 
-### Phase 1 (developer / coding agent), with synthetic data
+### Phase 1 (developer / coding agent)
 
-1. Hopper input schema (Pydantic): dimensions, plate thickness, material, with units and source references. Design criteria (for example minimum valley angle) are labelled placeholders until the engineering owner sets them (E-02).
-2. FreeCAD worker container in `workers/freecad/`, based on the spike Dockerfile.
-3. Hopper template modelled as individual welded plates (ADR-0001), with geometry checks (valley and wall angles, volume, interface dimensions).
-4. Outputs: STEP AP242, drawing PDF marked "DRAFT – NOT FOR FABRICATION" with automatic drawing checks, DXF flat patterns per plate.
-5. Command-line pipeline: parameter file in, outputs and check report out.
-6. Later: document extraction and AI extraction (Ollama), results stored in PostgreSQL.
+1. **Hopper template step 2:** tier beams (channels) and vertical stiffeners (angles) as profiles, with lengths and masses in the BOM; compare with the reference part lists.
+2. **Step 3:** top panels and the support interface (column grid, column plates).
+3. **Step 4:** bracing, inspection door, level studs; drawing set closer to the reference (sections, details).
+4. Document extraction and AI extraction (Ollama) of the hopper input set, once the reference input documents are available (F-3).
+5. Store runs, inputs and check results in PostgreSQL with internal versions (spec §25 Phase 1).
+6. Repeatability measurement (F-6) and the remaining F-criteria.
 
-Optional, when the Anthropic account has credit: rerun `spikes/llm-tool-calling` against Claude and update ADR-0002 and X-02.
+Optional, when the Anthropic account has credit: rerun `spikes/llm-tool-calling` against Claude (synthetic data only) and update ADR-0002 and X-02.
 
-### Product owner actions (needed before Phase 1)
+### Product owner actions
 
 | # | Action | Spec ref |
 |:---|:---|:---|
 | 1 | ~~Get a Claude API key~~ Key in `.env` and valid. **Still needed: buy prepaid credit** (Console → Settings → Billing) and set a spend limit | D-16 |
 | 2 | Formally appoint the internal engineer as engineering owner | §30.2, D-10 |
 | 3 | Agree targets F-1 to F-7 with the engineering owner | §1.2 |
-| 4 | Collect 2–3 reference hopper cases: pre-design input documents + issued drawings | §1.2 |
+| 4 | ~~Collect reference hopper cases~~ One complete delivery received. **Still needed:** its pre-design input documents (customer specification, design basis, meeting notes), and if possible 1–2 more cases | §1.2 |
 | 5 | Record today's manual effort for those cases (before seeing platform results) | §1.2, F-4 |
 | 6 | Ask the drafting office: existing CATIA drawing template, title block, numbering, revision scheme? | D-06 to D-08 |
 | 7 | Ask IT / document control which PDM/PLM system is used with CATIA | X-05, D-19 |
 | 8 | Get company approval of a cloud AI provider for real (confidential) data | D-16 |
 
 ## 4. Open questions and notes
+
+- For the engineering owner: the reference shortens the middle-tier end panel by about 20 mm more than the template's joint rule, and the bottom-tier side panel by about 2.5 mm (ADR-0004). Which joint detail causes this?
 
 - Taiga-S1 (Hugging Face CAD command model) was evaluated and **not adopted**: it drives the FreeCAD GUI step by step for simple PartDesign features and does not fit the template-first approach, drawings or document understanding.
 - The laptop GPU (RTX 3500 Ada, 12 GB) was not used; the Ollama server on `ecsserver` is used instead.
