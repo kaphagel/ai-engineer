@@ -23,6 +23,27 @@ class ReferencePlate(_Model):
     mass_kg: float | None = None
 
 
+class ReferenceProfile(_Model):
+    """Beams or stiffeners of one profile on one panel, as in the part drawing's parts list."""
+
+    description: str
+    drawing: str
+    panel: str
+    profile: str  # profile name in the case, for example "UPN200"
+    quantity: int
+    length_mm: float
+    mass_kg: float  # total for the quantity
+
+
+class ReferenceAssembly(_Model):
+    """Welded panel (plate, tier beam on its top edge and its stiffeners): net mass from the drawing."""
+
+    description: str
+    drawing: str
+    panel: str
+    mass_kg: float
+
+
 class ReferenceValue(_Model):
     description: str
     measurement: str  # key in the worker measurements, for example "valley_angle_deg"
@@ -34,6 +55,8 @@ class Reference(_Model):
     drawing: str
     data_classification: str = Field(pattern="^(internal|confidential|restricted)$")
     plates: list[ReferencePlate]
+    profiles: list[ReferenceProfile] = []
+    assemblies: list[ReferenceAssembly] = []
     values: list[ReferenceValue] = []
 
     @classmethod
@@ -79,6 +102,8 @@ def compare(
                 largest_abs_mm=max(abs(dw), abs(dh)),
             )
         )
+    rows += _profiles(reference, result)
+    rows += _assemblies(reference, result, density_kg_m3, thickness_mm)
     for value in reference.values:
         generated = result["measurements"].get(value.measurement)
         if isinstance(generated, int | float):
@@ -90,6 +115,65 @@ def compare(
                     difference=f"{generated - value.value:+.2f}",
                 )
             )
+    return rows
+
+
+def _part_masses(result: dict[str, Any]) -> dict[str, float]:
+    return {part: item["unit_mass_kg"] for item in result["bom"] for part in item.get("parts", [])}
+
+
+def _profiles(reference: Reference, result: dict[str, Any]) -> list[Difference]:
+    measured = result["measurements"].get("profiles", {})
+    masses = _part_masses(result)
+    rows = []
+    for ref in reference.profiles:
+        found = [n for n, p in measured.items() if p["panel"] == ref.panel and p["profile"] == ref.profile]
+        item = f"{ref.description} ({ref.drawing})"
+        expected = f"{ref.quantity} x {ref.profile} L={ref.length_mm:g}, {ref.mass_kg:g} kg"
+        if not found:
+            rows.append(Difference(item=item, reference=expected, generated="not generated", difference="-"))
+            continue
+        lengths = sorted({round(measured[n]["length_mm"], 1) for n in found})
+        mass = sum(masses.get(n, 0.0) for n in found)
+        furthest = max(lengths, key=lambda x: abs(x - ref.length_mm))
+        rows.append(
+            Difference(
+                item=item,
+                reference=expected,
+                generated=f"{len(found)} x L={'/'.join(f'{x:g}' for x in lengths)}, {mass:.1f} kg ({ref.panel})",
+                difference=f"qty {len(found) - ref.quantity:+d}; L {furthest - ref.length_mm:+.1f} mm; "
+                f"mass {mass - ref.mass_kg:+.1f} kg",
+                largest_abs_mm=abs(furthest - ref.length_mm),
+            )
+        )
+    return rows
+
+
+def _assemblies(
+    reference: Reference, result: dict[str, Any], density_kg_m3: float, thickness_mm: float
+) -> list[Difference]:
+    panels = result["measurements"]["panels"]
+    profiles = result["measurements"].get("profiles", {})
+    masses = _part_masses(result)
+    rows = []
+    for ref in reference.assemblies:
+        item = f"{ref.description} ({ref.drawing})"
+        if ref.panel not in panels:
+            rows.append(
+                Difference(item=item, reference=f"{ref.mass_kg:g} kg", generated="not generated", difference="-")
+            )
+            continue
+        plate = panels[ref.panel]["flat_area_m2"] * thickness_mm / 1000 * density_kg_m3
+        attached = sum(masses.get(n, 0.0) for n, p in profiles.items() if p["panel"] == ref.panel)
+        mass = plate + attached
+        rows.append(
+            Difference(
+                item=item,
+                reference=f"{ref.mass_kg:g} kg",
+                generated=f"{mass:.1f} kg (plate {plate:.1f} + profiles {attached:.1f}, {ref.panel})",
+                difference=f"{mass - ref.mass_kg:+.1f} kg ({(mass - ref.mass_kg) / ref.mass_kg:+.1%})",
+            )
+        )
     return rows
 
 

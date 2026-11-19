@@ -19,6 +19,102 @@ designation = "S235JR"
 standard = "EN 10025-2"
 density_kg_m3 = { value = 7850, source = "synthetic" }
 
+# Rolled sections. The mass per metre is used for the BOM; the dimensions only shape the 3D model.
+[profiles.UPN200]
+kind = "channel"
+designation = "UPN 200"
+standard = "EN 10279"
+material = "S355JR EN 10025-2"
+depth_mm = 200
+width_mm = 75
+web_thickness_mm = 8.5
+flange_thickness_mm = 11.5
+mass_per_m_kg = 25.3
+source = "synthetic: typical catalogue values, not checked"
+
+[profiles.UPN160]
+kind = "channel"
+designation = "UPN 160"
+standard = "EN 10279"
+material = "S355JR EN 10025-2"
+depth_mm = 160
+width_mm = 65
+web_thickness_mm = 7.5
+flange_thickness_mm = 10.5
+mass_per_m_kg = 18.8
+source = "synthetic: typical catalogue values, not checked"
+
+[profiles.L75x50x6]
+kind = "angle"
+designation = "L 75x50x6"
+standard = "EN 10056-1"
+material = "S355JR EN 10025-2"
+depth_mm = 75
+width_mm = 50
+web_thickness_mm = 6
+flange_thickness_mm = 6
+mass_per_m_kg = 5.65
+source = "synthetic: typical catalogue values, not checked"
+
+[profiles.L100x65x7]
+kind = "angle"
+designation = "L 100x65x7"
+standard = "EN 10056-1"
+material = "S355JR EN 10025-2"
+depth_mm = 100
+width_mm = 65
+web_thickness_mm = 7
+flange_thickness_mm = 7
+mass_per_m_kg = 8.77
+source = "synthetic: typical catalogue values, not checked"
+
+# Tier beams at every tier joint; stiffeners per wall and tier (bays = centre distances, symmetric
+# about the panel centreline; profiles left to right as seen from outside).
+[stiffening]
+
+[stiffening.tier_beams]
+side_profile = "UPN200"
+end_profile = "UPN160"
+side_end_extensions_mm = [10, 10]
+end_end_extensions_mm = [10, 10]
+source = "synthetic"
+
+[[stiffening.stiffeners]]
+wall = "side"
+tier = 1
+bays_mm = [750, 850, 850, 850, 850, 750]
+profiles = ["L75x50x6", "L75x50x6", "L100x65x7", "L75x50x6", "L100x65x7", "L75x50x6", "L75x50x6"]
+bottom_clearance_mm = 0
+top_extension_mm = 10
+source = "synthetic"
+
+[[stiffening.stiffeners]]
+wall = "side"
+tier = 2
+bays_mm = [1000, 1100, 1100, 1100, 1000]
+profiles = ["L75x50x6", "L100x65x7", "L75x50x6", "L75x50x6", "L100x65x7", "L75x50x6"]
+bottom_clearance_mm = 20
+top_extension_mm = 10
+source = "synthetic"
+
+[[stiffening.stiffeners]]
+wall = "end"
+tier = 1
+bays_mm = [360]
+profiles = ["L75x50x6", "L75x50x6"]
+bottom_clearance_mm = 150
+top_extension_mm = 10
+source = "synthetic"
+
+[[stiffening.stiffeners]]
+wall = "end"
+tier = 2
+bays_mm = []
+profiles = ["L75x50x6"]
+bottom_clearance_mm = 0
+top_extension_mm = 10
+source = "synthetic"
+
 # Engineering decisions: from the approved design basis only (spec §30.2, E-02/E-03).
 [design_basis]
 general_tolerances = { value = "TBC (E-03)", source = "placeholder" }

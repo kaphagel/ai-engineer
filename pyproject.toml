@@ -54,6 +54,7 @@ files = [
     "domains/esp/tests",
     # Pure-Python worker modules; the others need FreeCAD and are checked by the integration test.
     "workers/freecad/iaiep_worker/hopper_geometry.py",
+    "workers/freecad/iaiep_worker/hopper_profiles.py",
     "workers/freecad/iaiep_worker/layout.py",
     "workers/freecad/iaiep_worker/panel.py",
     "workers/freecad/iaiep_worker/dxf.py",

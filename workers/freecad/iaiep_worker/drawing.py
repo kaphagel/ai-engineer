@@ -109,7 +109,7 @@ def view_vertices(view):
 
 
 def find_vertex(view, point):
-    """Name of the view vertex at the projection of a 3D model point, or None."""
+    """Name of the view vertex at the projection of a 3D model point (cosmetic if hidden), or None."""
     centre = view.projectPoint(view.getGeometricCenter())
     target = view.projectPoint(App.Vector(*point)) - centre
     best = None
@@ -117,9 +117,17 @@ def find_vertex(view, point):
         distance = math.hypot(p.x - target.x, p.y - target.y)
         if best is None or distance < best[0]:
             best = (distance, index)
-    if best is None or best[0] > POINT_TOLERANCE:
+    if best is not None and best[0] <= POINT_TOLERANCE:
+        return f"Vertex{best[1]}"
+    # The point is hidden behind other parts (only visible vertices exist): add a cosmetic vertex there.
+    # Cosmetic vertices use the same view coordinates and are appended to the vertex list.
+    index = len(view_vertices(view))
+    view.makeCosmeticVertex(target)
+    view.recompute()
+    p = view.getVertexBySelection(f"Vertex{index}").Point
+    if math.hypot(p.x - target.x, p.y - target.y) > POINT_TOLERANCE:
         return None
-    return f"Vertex{best[1]}"
+    return f"Vertex{index}"
 
 
 def disable_face_detection():

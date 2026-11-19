@@ -3,7 +3,7 @@
 - **Status:** Accepted for Phase 1 (template status: draft, spec §12.4)
 - **Date:** 2026-11-19
 - **Related:** spec §1.2, §12.3, §12.4, §24.3, D-03, E-02, E-03, ADR-0001
-- **Evidence:** `workers/freecad/iaiep_worker/hopper_geometry.py`, tests; reference comparison report (confidential, not committed)
+- **Evidence:** `workers/freecad/iaiep_worker/hopper_geometry.py`, `hopper_profiles.py`, tests; reference comparison report (confidential, not committed)
 
 ## Context
 
@@ -22,7 +22,17 @@ Template `esp.hopper` 0.2.0 replaces 0.1.0 and generalizes it:
 - Every input value carries its source. Tolerances, standard notes (weld quality, execution class) and design criteria come from the design basis; the minimum valley angle stays a labelled, unapproved placeholder until the engineering owner sets it (E-02).
 - The geometry rules are pure Python (unit-tested). The platform calculates the same quantities with a separate implementation and checks the model against it.
 
-Not yet modelled: stiffeners, tier beams, top panels and support interface, bracing, corner joint plates, welds, inspection door and level studs.
+Not yet modelled: top panels and support interface, bracing, corner joint plates, welds, inspection door and level studs.
+
+### Step 2 (template 0.3.0): tier beams and stiffeners
+
+- **Tier beams:** a channel on the top edge of every tier except the topmost, one per wall and joint, web horizontal under the upper panel, flanges hanging down outside the lower panel (as in the reference part drawings). Its length is the top edge of the lower panel plus an end extension at each end.
+- **Stiffeners:** angles on the outer face of a panel, square to its top edge, one leg on the plate. Positions are given as bays (centre distances) symmetric about the panel centreline, with a profile per position, because the part drawings dimension them that way. A stiffener runs from the panel's bottom edge (at least a clearance above the plate bottom) to the top edge, plus an extension where a tier beam is above.
+- **Inputs, not rules:** beam end extensions (per joint and wall type), stiffener top extensions and bottom clearances (per layout) differ between tiers in the reference without a rule we could derive. They are input values with sources from the part drawings, flagged for the engineering owner, rather than invented formulas.
+- **Profiles:** a catalogue in the input set (kind, nominal dimensions, mass per metre, material, source). The BOM uses the mass per metre; the dimensions only shape the 3D model (no root radii).
+- **Simplified connections:** copes, cut-outs and corner connections are not modelled. Overlaps of parts at connections are listed in the report, not counted as errors; plates overlapping each other, or a profile cutting into the plate it stands on, still fail.
+- The platform calculates every beam and stiffener (set, profile, length, mass) independently and checks the model and the BOM against it.
+- Drawing dimensions whose points are hidden behind profiles are attached to cosmetic vertices at the exact model points.
 
 ## Results on the reference case
 
@@ -35,9 +45,11 @@ Generated panel plates compared with the issued part drawings (sizes as on the d
 | Middle tier, side | +0.3 / +0.1 mm | −0.3 kg |
 | Middle tier, end | −0.9 / **+21.8 mm** | +1.5 kg |
 
+Step 2, on the same case: profile counts match the part drawings on all four reference panels; profile lengths match within 1 mm except where they follow the plate differences above (+2.5 mm bottom side, +21.8 mm middle end). Net masses of the welded panels: −0.9 % (bottom side, which also has small flat bars not modelled), +0.1 %, +0.0 % and +0.7 %.
+
 The geometry, slopes and panel construction match. The open differences are joint allowances: the reference shortens the middle end panel by about another 20 mm and the bottom side panel by about 2.5 mm. These follow details not yet modelled (corner and tier joints) and need the engineering owner's explanation before the template rules are changed.
 
 ## Consequences
 
-- Phase 1 F-1/F-2 comparisons use this reference case. The template grows step by step towards the issued construction: tier beams and stiffeners, then top panels and the support interface, then bracing and accessories.
+- Phase 1 F-1/F-2 comparisons use this reference case. The template grows step by step towards the issued construction: tier beams and stiffeners (done, 0.3.0), then top panels and the support interface, then bracing and accessories.
 - Template parameters for the reference case are read from the issued drawings; for new projects they come from the design basis and the AI extraction step (F-3).

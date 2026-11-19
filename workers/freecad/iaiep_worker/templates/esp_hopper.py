@@ -2,8 +2,9 @@
 
 The geometry rules are in iaiep_worker.hopper_geometry (pure Python, unit-tested). This module turns
 the panels into FreeCAD solids, measures the model, and produces the BOM, flat patterns, drawing and
-exports. Stiffeners, tier beams, top panels, bracing, corner joint plates and welds are not modelled
-in this template version.
+exports. Tier beams and stiffeners are placed by iaiep_worker.hopper_profiles (also pure Python).
+Top panels, support beams, bracing, corner joint plates, copes and welds are not modelled in this
+template version.
 """
 
 import hashlib
@@ -16,17 +17,19 @@ import Part
 from iaiep_worker import drawing as dw
 from iaiep_worker import dxf
 from iaiep_worker import hopper_geometry as geo
+from iaiep_worker import hopper_profiles as hp
 from iaiep_worker import layout as lay
 from iaiep_worker import panel as pnl
 
 TEMPLATE_ID = "esp.hopper"
-VERSION = "0.2.0"
+VERSION = "0.3.0"
 
 V = App.Vector
 
 
 def run(job, out_dir):
     spec = geo.HopperSpec.from_parameters(job["parameters"])
+    stiffening = hp.Stiffening.from_job(job.get("stiffening"))
     material = job["material"]
     meta = job["drawing"]
 
@@ -35,24 +38,26 @@ def run(job, out_dir):
     dw.disable_face_detection()
     _store_parameters(doc, job["parameters"])
     plates = _build_plates(doc, spec)
+    profiles = _build_profiles(doc, spec, stiffening)
     doc.recompute()
 
-    measurements = _measure(plates, spec)
-    bom = _bom(plates, spec, material)
-    flat_patterns = _write_flat_patterns(bom, meta, out_dir)
+    measurements = _measure(plates, profiles, spec)
+    plate_bom = _bom(plates, spec, material)
+    bom = plate_bom + _profile_bom(profiles, start=len(plate_bom))
+    flat_patterns = _write_flat_patterns(plate_bom, meta, out_dir)
     dw.log("model, measurements and flat patterns done")
-    drawing_result = _make_drawing(doc, plates, spec, material, meta, bom, measurements)
+    drawing_result = _make_drawing(doc, plates + profiles, spec, material, meta, bom, measurements)
 
     step_path = os.path.join(out_dir, "hopper.step")
     Part.setStaticValue("write.step.schema", "AP242DIS")
     import Import
 
-    Import.export([pl["obj"] for pl in plates], step_path)
+    Import.export([part["obj"] for part in plates + profiles], step_path)
     doc.saveAs(os.path.join(out_dir, "hopper.FCStd"))
 
     return {
         "measurements": measurements,
-        "bom": [{k: v for k, v in item.items() if k != "plates"} for item in bom],
+        "bom": bom,
         "flat_patterns": flat_patterns,
         "drawing": drawing_result,
         "files": {
@@ -61,7 +66,7 @@ def run(job, out_dir):
             "drawing_pdf": "drawing.pdf",
             "flat_patterns": [fp["file"] for fp in flat_patterns],
         },
-        "geometry_signature": _signature(plates),
+        "geometry_signature": _signature(plates + profiles),
     }
 
 
@@ -89,6 +94,30 @@ def _build_plates(doc, spec):
     return plates
 
 
+def _build_profiles(doc, spec, stiffening):
+    panels = geo.panels(spec)
+    parts = []
+    for beam in hp.tier_beams(spec, panels, stiffening):
+        up = V(0, 0, 1)
+        section = [V(*beam.origin) + V(*beam.outward) * a + up * b for a, b in hp.beam_section(beam)]
+        parts.append(_profile_part(doc, beam, "beam", section, beam.along))
+    for stiffener in hp.stiffeners(spec, panels, stiffening):
+        section = [
+            V(*stiffener.origin) + V(*stiffener.across) * a + V(*stiffener.normal) * b
+            for a, b in hp.stiffener_section(stiffener)
+        ]
+        parts.append(_profile_part(doc, stiffener, "stiffener", section, stiffener.along))
+    return parts
+
+
+def _profile_part(doc, part, kind, section, along):
+    face = Part.Face(Part.makePolygon([*section, section[0]]))
+    obj = doc.addObject("Part::Feature", part.name.replace("-", "_"))
+    obj.Label = part.name
+    obj.Shape = face.extrude(V(*along) * part.length)
+    return {"name": part.name, "obj": obj, "part": part, "kind": kind}
+
+
 # --- measurements (taken from the model; the platform compares them with its own calculation) ----
 
 
@@ -111,8 +140,12 @@ def _model_flat_contour(plate):
     return geo.flat_contour(measured)
 
 
-def _measure(plates, spec):
+def _measure(plates, profiles, spec):
     shape = geo.inner_shape(spec)
+    plate_profile = [
+        {**o, "own_plate": o["parts"][0] == next(p["part"].panel for p in profiles if p["name"] == o["parts"][1])}
+        for o in _overlaps(plates, profiles)
+    ]
     panels = {}
     for pl in plates:
         contour = _model_flat_contour(pl)
@@ -135,22 +168,42 @@ def _measure(plates, spec):
         "valley_angle_deg": round(shape.valley_angle_deg(), 4),
         "capacity_m3": round(shape.capacity_m3(), 4),
         "overall_mm": [round(bb.XLength, 2), round(bb.YLength, 2), round(bb.ZLength, 2)],
-        "solids_valid": all(pl["obj"].Shape.isValid() for pl in plates),
-        "interferences": _interferences(plates),
+        "profiles": {pr["name"]: _measure_profile(pr) for pr in profiles},
+        "solids_valid": all(part["obj"].Shape.isValid() for part in plates + profiles),
+        # A profile must not cut into the plate it stands on, nor plates into each other.
+        "interferences": _overlaps(plates, plates) + [o for o in plate_profile if o["own_plate"]],
+        # Copes, cut-outs and corner connections are not modelled: overlaps there are expected.
+        "connection_overlaps": [o for o in plate_profile if not o["own_plate"]] + _overlaps(profiles, profiles),
     }
 
 
-def _interferences(plates):
-    """Pairs of plates whose solids overlap by more than 1 mm³ (they should at most touch)."""
+def _measure_profile(profile):
+    """Length of the profile solid measured along its axis, and its section, from the model."""
+    part = profile["part"]
+    along = V(*part.along)
+    shape = profile["obj"].Shape
+    positions = [v.Point.dot(along) for v in shape.Vertexes]
+    return {
+        "kind": profile["kind"],
+        "panel": part.panel,
+        "profile": part.section.name,
+        "length_mm": round(max(positions) - min(positions), 2),
+        "section_area_mm2": round(shape.Volume / part.length, 2),
+    }
+
+
+def _overlaps(group_a, group_b):
+    """Pairs of solids that overlap by more than 1 mm³ (they should at most touch)."""
     found = []
-    for i, a in enumerate(plates):
-        for b in plates[i + 1 :]:
+    same = group_a is group_b
+    for i, a in enumerate(group_a):
+        for b in group_a[i + 1 :] if same else group_b:
             sa, sb = a["obj"].Shape, b["obj"].Shape
             if not sa.BoundBox.intersect(sb.BoundBox):
                 continue
             volume = sa.common(sb).Volume
             if volume > 1.0:
-                found.append({"plates": [a["name"], b["name"]], "volume_mm3": round(volume, 1)})
+                found.append({"parts": [a["name"], b["name"]], "volume_mm3": round(volume, 1)})
     return found
 
 
@@ -176,6 +229,7 @@ def _bom(plates, spec, material):
         items.append(
             {
                 "item": len(items) + 1,
+                "kind": "plate",
                 "mark": f"P{len(items) + 1}",
                 "description": f"{kind.capitalize()} wall panel, tier {panel.tier}",
                 "panels": [m[0]["name"] for m in members],
@@ -189,6 +243,43 @@ def _bom(plates, spec, material):
             }
         )
     return items
+
+
+def _profile_bom(profiles, start):
+    """One BOM item per profile and cut length. Mass from the catalogue mass per metre."""
+    groups = {}
+    for pr in profiles:
+        part = pr["part"]
+        groups.setdefault((pr["kind"], part.section.name, round(part.length)), []).append(pr)
+    items = []
+    counters = {"beam": 0, "stiffener": 0}
+    for (kind, _, _length), members in sorted(groups.items(), key=lambda kv: (kv[0][0] != "beam", kv[0][1:])):
+        counters[kind] += 1
+        section = members[0]["part"].section
+        places = sorted({(hp.wall_kind(m["part"].panel), _tier(m["part"].panel)) for m in members})
+        where = f", {places[0][0]} wall tier {places[0][1]}" if len(places) == 1 else ""
+        unit_mass = hp.mass_kg(section, members[0]["part"].length)
+        items.append(
+            {
+                "item": start + len(items) + 1,
+                "kind": kind,
+                "mark": f"{'B' if kind == 'beam' else 'S'}{counters[kind]}",
+                "description": f"{'Tier beam' if kind == 'beam' else 'Stiffener'}{where}",
+                "parts": [m["name"] for m in members],
+                "quantity": len(members),
+                "profile": section.name,
+                "section": section.designation,
+                "length_mm": round(members[0]["part"].length, 1),
+                "material": section.material,
+                "unit_mass_kg": round(unit_mass, 2),
+                "total_mass_kg": round(unit_mass * len(members), 2),
+            }
+        )
+    return items
+
+
+def _tier(panel_name):
+    return int(panel_name.split("-T")[1].split("-")[0])
 
 
 def _write_flat_patterns(bom, meta, out_dir):
@@ -209,22 +300,22 @@ def _write_flat_patterns(bom, meta, out_dir):
 
 # --- drawing ---------------------------------------------------------------------------------
 
-PARTS_LIST_HEADER = ["Item", "Mark", "Qty", "Description", "Plate", "Mass kg"]
-PARTS_LIST_COLUMNS = [12.0, 14.0, 10.0, 80.0, 24.0, 22.0]
+PARTS_LIST_HEADER = ["Item", "Mark", "Qty", "Description", "Section", "Mass kg"]
+PARTS_LIST_COLUMNS = [12.0, 14.0, 10.0, 62.0, 42.0, 22.0]
 
 
-def _make_drawing(doc, plates, spec, material, meta, bom, m):
-    sources = [pl["obj"] for pl in plates]
+def _make_drawing(doc, parts, spec, material, meta, bom, m):
+    sources = [part["obj"] for part in parts]
     ex, ey, ez = m["overall_mm"]
     iso_dir, iso_x = (1, -1, 1), (1, 1, 0)
-    notes = _notes(spec, material, meta, m)
+    notes = _notes(spec, material, meta, m, bom)
     rows = [
         [
             str(i["item"]),
             i["mark"],
             str(i["quantity"]),
             i["description"],
-            f"PL {i['thickness_mm']:g}",
+            f"PL {i['thickness_mm']:g}" if i["kind"] == "plate" else f"{i['section']} L={i['length_mm']:.0f}",
             f"{i['total_mass_kg']:.1f}",
         ]
         for i in bom
@@ -333,7 +424,7 @@ def _make_drawing(doc, plates, spec, material, meta, bom, m):
     }
 
 
-def _notes(spec, material, meta, m):
+def _notes(spec, material, meta, m, bom):
     notes = [
         "NOTES",
         "1. DIMENSIONS IN mm. INSIDE DIMENSIONS ON THE INNER PLATE SURFACE.",
@@ -343,17 +434,20 @@ def _notes(spec, material, meta, m):
         f"5. VALLEY ANGLE {m['valley_angle_deg']:.1f}°, WALL SLOPES {m['side_wall_slope_deg']:.1f}° (SIDE) / "
         f"{m['end_wall_slope_deg']:.1f}° (END).",
         f"6. CAPACITY {m['capacity_m3']:.1f} m³.",
-        "7. STIFFENERS, BEAMS, BRACING, CORNER JOINTS AND WELDS NOT SHOWN.",
     ]
+    profile_materials = sorted({i["material"] for i in bom if i["kind"] != "plate"})
+    if profile_materials:
+        notes.append(f"{len(notes)}. PROFILES {', '.join(profile_materials)}; MASS FROM CATALOGUE kg/m.")
+    notes.append(f"{len(notes)}. TOP PANELS, BRACING, CORNER JOINTS, COPES AND WELDS NOT SHOWN.")
     # Standard notes come from the design basis (spec §12.8); never chosen by the template.
     notes += [f"{len(notes) + i}. {text}" for i, text in enumerate(meta.get("standard_notes", []))]
     return notes
 
 
-def _signature(plates):
+def _signature(parts):
     """Geometry summary for repeatability comparison (F-6)."""
     data = []
-    for pl in plates:
+    for pl in parts:
         s = pl["obj"].Shape
         bb = s.optimalBoundingBox()
         data.append(

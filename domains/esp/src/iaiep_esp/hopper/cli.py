@@ -39,6 +39,7 @@ def build_job(case: HopperCase) -> dict[str, Any]:
             "standard": case.material.standard,
             "density_kg_m3": case.material.density_kg_m3.value,
         },
+        "stiffening": _stiffening_job(case),
         "drawing": {
             "title": d.title,
             "subtitle": d.subtitle,
@@ -55,6 +56,17 @@ def build_job(case: HopperCase) -> dict[str, Any]:
     }
 
 
+def _stiffening_job(case: HopperCase) -> dict[str, Any] | None:
+    st = case.stiffening
+    if st is None:
+        return None
+    return {
+        "profiles": {name: p.model_dump(exclude={"source"}) for name, p in case.profiles.items()},
+        "tier_beams": st.tier_beams.model_dump(exclude={"source"}) if st.tier_beams else None,
+        "stiffeners": [layout.model_dump(exclude={"source"}) for layout in st.stiffeners],
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="iaiep-hopper", description="Generate and check an ESP hopper.")
     parser.add_argument("case", type=Path, help="hopper input set (TOML)")
@@ -68,7 +80,11 @@ def main(argv: list[str] | None = None) -> int:
     except (OSError, ValueError, ValidationError) as exc:
         print(f"Invalid input: {exc}", file=sys.stderr)
         return 2
-    calc = calculate(case.parameters)
+    try:
+        calc = calculate(case)
+    except ValueError as exc:
+        print(f"Invalid input: {exc}", file=sys.stderr)
+        return 2
     started = datetime.now(UTC)
     try:
         run = run_job(build_job(case), args.out, WorkerSettings.from_env())
@@ -96,6 +112,7 @@ def main(argv: list[str] | None = None) -> int:
         "reference": reference.name if reference else None,
         "differences": [d.model_dump() for d in differences],
         "geometry_signature": run.result.get("geometry_signature", {}).get("sha256"),
+        "connection_overlaps": run.result.get("measurements", {}).get("connection_overlaps", []),
     }
     (args.out / "report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
     (args.out / "report.md").write_text(_markdown(case, calc, checks, reference, differences, report), encoding="utf-8")
@@ -120,6 +137,7 @@ def _calculation_dict(calc: HopperCalculation) -> dict[str, Any]:
         "valley_angle_deg": round(calc.valley_angle_deg, 4),
         "capacity_m3": round(calc.capacity_m3, 4),
         "panels": {k: [round(v.width_mm, 2), round(v.height_mm, 2)] for k, v in calc.panels.items()},
+        "profiles": {k: [v.profile, round(v.length_mm, 2), round(v.mass_kg, 2)] for k, v in calc.profiles.items()},
     }
 
 
@@ -132,6 +150,7 @@ def _markdown(
     report: dict[str, Any],
 ) -> str:
     failed = sum(c.failed for c in checks)
+    plate_mass = calc.plate_mass_kg(case.parameters.plate_thickness_mm.value, case.material.density_kg_m3.value)
     lines = [
         f"# Hopper report: {case.drawing.title} ({case.drawing.drawing_number} rev {case.drawing.revision})",
         "",
@@ -147,12 +166,17 @@ def _markdown(
         f"- Wall slopes: side {calc.side_wall_slope_deg:.2f}°, end {calc.end_wall_slope_deg:.2f}°; "
         f"valley angle {calc.valley_angle_deg:.2f}°",
         f"- Capacity: {calc.capacity_m3:.2f} m³",
+        f"- Mass: plates {plate_mass:.0f} kg, profiles {calc.profile_mass_kg():.0f} kg "
+        f"({len(calc.profiles)} beams and stiffeners)",
         "",
         "## Checks",
         "",
         "| Check | Status | Detail |",
         "|:---|:---|:---|",
         *[f"| {c.id} | {c.status.value} | {c.detail} |" for c in checks],
+        "",
+        f"Simplified model: copes, cut-outs and corner connections are not modelled, so parts overlap at "
+        f"{len(report['connection_overlaps'])} connections (listed in report.json, not counted as errors).",
     ]
     if reference:
         lines += [

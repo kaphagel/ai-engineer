@@ -24,27 +24,40 @@ def measurements(calc: HopperCalculation) -> dict[str, Any]:
         "end_wall_slope_deg": calc.end_wall_slope_deg,
         "valley_angle_deg": calc.valley_angle_deg,
         "capacity_m3": calc.capacity_m3,
+        "profiles": {
+            n: {"kind": p.kind, "panel": p.panel, "profile": p.profile, "length_mm": p.length_mm}
+            for n, p in calc.profiles.items()
+        },
         "solids_valid": True,
         "interferences": [],
     }
 
 
 def test_model_matching_the_calculation_passes(case: HopperCase) -> None:
-    calc = calculate(case.parameters)
+    calc = calculate(case)
     results = checks._model_against_calculation(calc, measurements(calc))
     assert [r.id for r in results if r.failed] == []
 
 
 def test_wrong_panel_size_in_the_model_fails(case: HopperCase) -> None:
-    calc = calculate(case.parameters)
+    calc = calculate(case)
     m = measurements(calc)
     m["panels"]["SideLeft-T2"]["flat_size_mm"][1] += 1.0
     failed = [r.id for r in checks._model_against_calculation(calc, m) if r.failed]
     assert failed == ["model.panel_size.SideLeft-T2"]
 
 
+def test_wrong_stiffener_length_or_missing_beam_fails(case: HopperCase) -> None:
+    calc = calculate(case)
+    m = measurements(calc)
+    m["profiles"]["Stiff-SideLeft-T1-03"]["length_mm"] += 1.0
+    del m["profiles"]["Beam-EndInlet-J2"]
+    failed = [r.id for r in checks._model_against_calculation(calc, m) if r.failed]
+    assert failed == ["model.profile_set", "model.stiffeners"]
+
+
 def test_unapproved_criterion_is_never_reported_as_a_plain_pass(case: HopperCase) -> None:
-    result = checks._valley_criterion(case, calculate(case.parameters))
+    result = checks._valley_criterion(case, calculate(case))
     assert result.status is CheckStatus.PASS_UNAPPROVED
 
 
@@ -52,4 +65,4 @@ def test_valley_angle_below_the_criterion_fails(case: HopperCase) -> None:
     data = case.model_dump()
     data["design_basis"]["min_valley_angle_deg"] = {"value": 70, "source": "test", "approved": True}
     strict = HopperCase.model_validate(data)
-    assert checks._valley_criterion(strict, calculate(strict.parameters)).failed
+    assert checks._valley_criterion(strict, calculate(strict)).failed

@@ -4,8 +4,10 @@ import pytest
 from pydantic import ValidationError
 
 from iaiep_esp.hopper.calculation import calculate
+from iaiep_esp.hopper.cli import build_job
 from iaiep_esp.hopper.inputs import HopperCase
 from iaiep_worker import hopper_geometry as geo
+from iaiep_worker import hopper_profiles as hp
 
 EXAMPLE = Path(__file__).parents[1] / "examples" / "hopper_synthetic.toml"
 
@@ -16,7 +18,7 @@ def case() -> HopperCase:
 
 
 def test_calculation_agrees_with_the_independent_worker_geometry(case: HopperCase) -> None:
-    calc = calculate(case.parameters)
+    calc = calculate(case)
     spec = geo.HopperSpec.from_parameters(case.parameters.values())
     shape = geo.inner_shape(spec)
     assert calc.inner_top_length_mm == pytest.approx(shape.top_length, abs=1e-6)
@@ -41,4 +43,31 @@ def test_tiers_must_add_up_to_the_height(case: HopperCase) -> None:
     data = case.model_dump()
     data["parameters"]["tier_heights_mm"]["value"] = [1200, 1500]
     with pytest.raises(ValidationError, match="tier heights add up to"):
+        HopperCase.model_validate(data)
+
+
+@pytest.mark.parametrize("vertical_height", [1200, 1800])  # 1800: end walls change slope inside tier 2
+def test_beams_and_stiffeners_agree_with_the_independent_worker_placement(
+    case: HopperCase, vertical_height: float
+) -> None:
+    data = case.model_dump()
+    data["parameters"]["end_wall_vertical_height_mm"]["value"] = vertical_height
+    case = HopperCase.model_validate(data)
+    calc = calculate(case)
+    job = build_job(case)
+    spec = geo.HopperSpec.from_parameters(job["parameters"])
+    stiffening = hp.Stiffening.from_job(job["stiffening"])
+    panels = geo.panels(spec)
+    placed = hp.tier_beams(spec, panels, stiffening) + hp.stiffeners(spec, panels, stiffening)
+    assert {p.name: (p.panel, p.section.name) for p in placed} == {
+        n: (p.panel, p.profile) for n, p in calc.profiles.items()
+    }
+    for part in placed:
+        assert part.length == pytest.approx(calc.profiles[part.name].length_mm, abs=1e-6), part.name
+
+
+def test_stiffening_must_use_profiles_of_the_right_kind(case: HopperCase) -> None:
+    data = case.model_dump()
+    data["stiffening"]["stiffeners"][0]["profiles"][0] = "UPN200"
+    with pytest.raises(ValidationError, match="'UPN200' must be a angle"):
         HopperCase.model_validate(data)

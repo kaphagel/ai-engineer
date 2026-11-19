@@ -76,6 +76,40 @@ def _model_against_calculation(calc: HopperCalculation, m: dict[str, Any]) -> li
     checks.append(
         _check("model.capacity", ok, f"model {m['capacity_m3']:.2f} m³, calculated {calc.capacity_m3:.2f} m³", src)
     )
+    return checks + _profiles_against_calculation(calc, m.get("profiles", {}))
+
+
+def _profiles_against_calculation(calc: HopperCalculation, measured: dict[str, Any]) -> list[CheckResult]:
+    """Tier beams and stiffeners: same set, on the same panels, same profiles and cut lengths."""
+    src = "model vs calculation"
+    checks = [
+        _check(
+            "model.profile_set",
+            set(measured) == set(calc.profiles),
+            f"{len(measured)} beams and stiffeners in the model, {len(calc.profiles)} calculated"
+            + (
+                f"; differ: {sorted(set(measured) ^ set(calc.profiles))[:6]}"
+                if set(measured) != set(calc.profiles)
+                else ""
+            ),
+            src,
+        )
+    ]
+    for kind in ("beam", "stiffener"):
+        expected = {n: p for n, p in calc.profiles.items() if p.kind == kind}
+        if not expected:
+            continue
+        wrong, worst = [], 0.0
+        for name, part in expected.items():
+            got = measured.get(name)
+            if got is None:
+                continue
+            deviation = abs(got["length_mm"] - part.length_mm)
+            worst = max(worst, deviation)
+            if deviation > LENGTH_TOL_MM or got["profile"] != part.profile or got["panel"] != part.panel:
+                wrong.append(f"{name}: model {got['profile']} L={got['length_mm']:.1f} on {got['panel']}")
+        detail = f"{len(expected)} {kind}s; largest length difference {worst:.2f} mm"
+        checks.append(_check(f"model.{kind}s", not wrong, detail + (f"; wrong: {wrong[:4]}" if wrong else ""), src))
     return checks
 
 
@@ -92,10 +126,27 @@ def _valley_criterion(case: HopperCase, calc: HopperCalculation) -> CheckResult:
 
 def _bom(case: HopperCase, calc: HopperCalculation, bom: list[dict[str, Any]]) -> list[CheckResult]:
     src = "bom vs calculation"
-    quantity = sum(item["quantity"] for item in bom)
-    mass = sum(item["total_mass_kg"] for item in bom)
+    plates = [item for item in bom if item["kind"] == "plate"]
+    profiles = [item for item in bom if item["kind"] != "plate"]
+    quantity = sum(item["quantity"] for item in plates)
+    mass = sum(item["total_mass_kg"] for item in plates)
     expected = calc.plate_mass_kg(case.parameters.plate_thickness_mm.value, case.material.density_kg_m3.value)
+    profile_count = sum(item["quantity"] for item in profiles)
+    profile_mass = sum(item["total_mass_kg"] for item in profiles)
+    expected_profile_mass = calc.profile_mass_kg()
     return [
+        _check(
+            "bom.profile_count",
+            profile_count == len(calc.profiles),
+            f"{profile_count} beams and stiffeners in the BOM, {len(calc.profiles)} calculated",
+            src,
+        ),
+        _check(
+            "bom.profile_mass",
+            abs(profile_mass - expected_profile_mass) <= max(RELATIVE_TOL * expected_profile_mass, 0.1),
+            f"BOM {profile_mass:.1f} kg, calculated {expected_profile_mass:.1f} kg",
+            src,
+        ),
         _check(
             "bom.plate_count",
             quantity == len(calc.panels),
@@ -114,7 +165,7 @@ def _bom(case: HopperCase, calc: HopperCalculation, bom: list[dict[str, Any]]) -
 def _flat_patterns(bom: list[dict[str, Any]], patterns: list[dict[str, Any]], out_dir: Path) -> list[CheckResult]:
     """Each DXF must contain exactly one closed outline whose size matches the BOM."""
     checks = []
-    sizes = {item["mark"]: item["flat_size_mm"] for item in bom}
+    sizes = {item["mark"]: item["flat_size_mm"] for item in bom if item["kind"] == "plate"}
     for pattern in patterns:
         check_id = f"dxf.{pattern['mark']}"
         try:
@@ -171,7 +222,7 @@ def _native_model(calc: HopperCalculation, path: Path) -> list[CheckResult]:
     except (OSError, KeyError, zipfile.BadZipFile) as exc:
         return [_fail("native.gui_document", f"{path.name} has no readable GUI document: {exc}", src)]
     hidden = []
-    for name in calc.panels:
+    for name in [*calc.panels, *calc.profiles]:
         object_name = name.replace("-", "_")
         start = gui.find(f'<ViewProvider name="{object_name}"')
         block = gui[start : gui.find("</ViewProvider>", start)] if start >= 0 else ""
@@ -181,7 +232,7 @@ def _native_model(calc: HopperCalculation, path: Path) -> list[CheckResult]:
     camera = re.search(r"height ([0-9.]+)", gui)
     fitted = camera is not None and float(camera.group(1)) > 100.0
     return [
-        _check("native.plates_visible", not hidden, f"hidden: {hidden}" if hidden else "all plates visible", src),
+        _check("native.parts_visible", not hidden, f"hidden: {hidden[:6]}" if hidden else "all parts visible", src),
         _check("native.camera_fitted", fitted, f"camera height {camera.group(1) if camera else '?'} mm", src),
     ]
 
