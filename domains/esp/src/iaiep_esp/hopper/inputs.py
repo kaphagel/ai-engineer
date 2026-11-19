@@ -62,6 +62,7 @@ class HopperParameters(_Model):
     tier_heights_mm: Lengths
     plate_thickness_mm: Length
     panel_gap_mm: OptionalLength
+    top_gap_mm: OptionalLength | None = None  # top panels end this far below the top, along the wall
 
     @model_validator(mode="after")
     def _consistent(self) -> Self:
@@ -83,7 +84,7 @@ class HopperParameters(_Model):
         return self
 
     def values(self) -> dict[str, float | list[float]]:
-        return {name: getattr(self, name).value for name in type(self).model_fields}
+        return {name: field.value for name in type(self).model_fields if (field := getattr(self, name)) is not None}
 
 
 class Material(_Model):
@@ -96,12 +97,12 @@ class Profile(_Model):
     """Rolled section from a catalogue. The mass per metre is used for the BOM; the dimensions only
     shape the 3D model (nominal, no root radii)."""
 
-    kind: Literal["channel", "angle"]
+    kind: Literal["channel", "angle", "h_section"]
     designation: str = Field(min_length=1)
     standard: str = Field(min_length=1)
     material: str = Field(min_length=1)
-    depth_mm: float = Field(gt=0)  # channel: web depth; angle: outstanding leg
-    width_mm: float = Field(gt=0)  # channel: flange width; angle: leg on the plate
+    depth_mm: float = Field(gt=0)  # channel, H: web depth; angle: outstanding leg
+    width_mm: float = Field(gt=0)  # channel, H: flange width; angle: leg on the plate
     web_thickness_mm: float = Field(gt=0)
     flange_thickness_mm: float = Field(gt=0)
     mass_per_m_kg: float = Field(gt=0)
@@ -135,7 +136,10 @@ class StiffenerLayout(_Model):
     bays_mm: list[float]
     profiles: list[str] = Field(min_length=1)
     bottom_clearance_mm: float = Field(ge=0)  # above the tier bottom
-    top_extension_mm: float = Field(ge=0)  # beyond the panel top edge, where a tier beam is above
+    # Beyond the panel top edge where a tier or top beam is above; negative: stops below the edge.
+    top_extension_mm: float
+    # Per stiffener: further shortening at the top (stiffeners stopping below brackets); default none.
+    stops_below_top_mm: list[float] | None = None
     source: str = Field(min_length=1)
 
     @model_validator(mode="after")
@@ -144,11 +148,54 @@ class StiffenerLayout(_Model):
             raise ValueError("bays must be positive")
         if len(self.profiles) != len(self.bays_mm) + 1:
             raise ValueError(f"{len(self.bays_mm)} bays need {len(self.bays_mm) + 1} profiles")
+        stops = self.stops_below_top_mm
+        if stops is not None and (len(stops) != len(self.profiles) or any(x < 0 for x in stops)):
+            raise ValueError("stops_below_top_mm needs one value of at least 0 per stiffener")
+        return self
+
+
+class TopBeams(_Model):
+    """Channels on the top edge of the topmost tier, split into segments (for example at the columns)."""
+
+    side_profile: str
+    end_profile: str
+    side_end_extension_mm: float  # beam length = plate top edge + 2 x extension; may be negative
+    end_end_extension_mm: float
+    side_splits_mm: list[float] = []  # joint positions along the beam, from the centreline
+    end_splits_mm: list[float] = []
+    source: str = Field(min_length=1)
+
+
+class Supports(_Model):
+    """Support column stubs at the support grid points on the hopper perimeter (corners on the end walls)."""
+
+    grid_x_mm: list[float] = Field(min_length=2)  # column lines along the hopper, from inlet to outlet
+    grid_y_mm: list[float] = Field(min_length=2, max_length=2)
+    stub_profile: str
+    stub_length_mm: float = Field(gt=0)
+    column_plate_top_above_top_mm: float  # top of the column plate above the hopper top
+    corner_column_plate_mm: list[float] = Field(min_length=3, max_length=3)  # along x, along y, thickness
+    side_column_plate_mm: list[float] = Field(min_length=3, max_length=3)
+    side_column_plate_outward_offset_mm: float = 0  # centre moved away from the hopper axis
+    base_plate_mm: list[float] = Field(min_length=3, max_length=3)
+    plate_material: str = Field(min_length=1)
+    source: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _grid(self) -> Self:
+        if self.grid_x_mm != sorted(self.grid_x_mm) or len(set(self.grid_x_mm)) != len(self.grid_x_mm):
+            raise ValueError("grid_x_mm must be increasing")
+        if self.grid_y_mm[0] >= 0 or self.grid_y_mm[1] <= 0:
+            raise ValueError("grid_y_mm needs one line on each side of the hopper axis")
+        if any(v <= 0 for v in [*self.corner_column_plate_mm, *self.side_column_plate_mm, *self.base_plate_mm]):
+            raise ValueError("plate sizes must be positive")
         return self
 
 
 class Stiffening(_Model):
     tier_beams: TierBeams | None = None
+    top_beams: TopBeams | None = None
+    supports: Supports | None = None
     stiffeners: list[StiffenerLayout] = []
 
 
@@ -195,6 +242,10 @@ class HopperCase(_Model):
             (p, "channel") for p in ((st.tier_beams.side_profile, st.tier_beams.end_profile) if st.tier_beams else ())
         ]
         wanted += [(p, "angle") for layout in st.stiffeners for p in layout.profiles]
+        if st.top_beams is not None:
+            wanted += [(st.top_beams.side_profile, "channel"), (st.top_beams.end_profile, "channel")]
+        if st.supports is not None:
+            wanted.append((st.supports.stub_profile, "h_section"))
         for name, kind in wanted:
             if name not in self.profiles or self.profiles[name].kind != kind:
                 errors.append(f"profile {name!r} must be a {kind} in [profiles]")

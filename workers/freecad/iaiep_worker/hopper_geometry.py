@@ -10,6 +10,7 @@ Shape (spec §24.3; reference construction checked against a real delivery, see 
 - The walls are divided into tiers (horizontal bands). Each tier of each wall is one flat panel,
   except where an end wall changes from vertical to sloped inside a tier (then two panels).
 - At every tier joint the upper panel starts `panel_gap` above the joint, measured along the wall.
+  The top panels end `top_gap` below the top (z = H, the underside of the top beams), along the wall.
 - Panel edges are square to the plate. Material is added outwards; adjacent walls meet at the inner
   corner line (corner joint detail not modelled).
 """
@@ -33,6 +34,7 @@ class HopperSpec:
     tier_heights: tuple[float, ...]  # bottom to top; must add up to `height`
     plate_thickness: float
     panel_gap: float
+    top_gap: float = 0.0
 
     @classmethod
     def from_parameters(cls, p: Mapping[str, object]) -> "HopperSpec":
@@ -55,6 +57,7 @@ class HopperSpec:
             tier_heights=tuple(float(t) for t in tiers),
             plate_thickness=num("plate_thickness_mm"),
             panel_gap=num("panel_gap_mm"),
+            top_gap=num("top_gap_mm") if p.get("top_gap_mm") is not None else 0.0,
         )
         spec.validate()
         return spec
@@ -69,7 +72,7 @@ class HopperSpec:
             errors.append("end wall vertical height must be at least 0 and less than the height")
         if self.slot_length_inside >= self.top_length_outside or self.slot_width_inside >= self.top_width_outside:
             errors.append("the slot must be smaller than the top opening")
-        if self.plate_thickness <= 0 or self.panel_gap < 0:
+        if self.plate_thickness <= 0 or self.panel_gap < 0 or self.top_gap < 0:
             errors.append("plate thickness must be positive and the panel gap not negative")
         if errors:
             raise ValueError("; ".join(errors))
@@ -153,10 +156,12 @@ def panels(spec: HopperSpec) -> list[Panel]:
     for tier, tier_height in enumerate(spec.tier_heights, start=1):
         z_top = z_bottom + tier_height
         gap = spec.panel_gap if tier > 1 else 0.0
+        top_gap = spec.top_gap if tier == len(spec.tier_heights) else 0.0
 
         # Side walls: one panel per tier; the outline has a kink where the end walls change slope.
         z0 = z_bottom + gap * side_rise
-        levels = [z0, *([hv] if z0 < hv < z_top else []), z_top]
+        z1 = z_top - top_gap * side_rise
+        levels = [z0, *([hv] if z0 < hv < z1 else []), z1]
         right_edge = [(e(z), z) for z in levels]
         outline = [(-e(z0), z0), *right_edge, *[(-x, z) for x, z in reversed(right_edge[1:])]]
         for wall, sign in (("SideLeft", 1.0), ("SideRight", -1.0)):
@@ -171,6 +176,8 @@ def panels(spec: HopperSpec) -> list[Panel]:
             suffix = "" if (za, zb) == (z_bottom, z_top) else f"-{part}"
             if za == z_bottom:
                 za += gap * (1.0 if part == "lower" else end_rise)
+            if zb == z_top:
+                zb -= top_gap * (1.0 if part == "lower" else end_rise)
             for wall, sign in (("EndOutlet", 1.0), ("EndInlet", -1.0)):
                 pts = [(e(za) * sign, -s(za) * sign, za), (e(za) * sign, s(za) * sign, za)]
                 pts += [(e(zb) * sign, s(zb) * sign, zb), (e(zb) * sign, -s(zb) * sign, zb)]

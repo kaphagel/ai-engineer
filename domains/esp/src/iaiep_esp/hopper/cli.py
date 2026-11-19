@@ -63,6 +63,8 @@ def _stiffening_job(case: HopperCase) -> dict[str, Any] | None:
     return {
         "profiles": {name: p.model_dump(exclude={"source"}) for name, p in case.profiles.items()},
         "tier_beams": st.tier_beams.model_dump(exclude={"source"}) if st.tier_beams else None,
+        "top_beams": st.top_beams.model_dump(exclude={"source"}) if st.top_beams else None,
+        "supports": st.supports.model_dump(exclude={"source"}) if st.supports else None,
         "stiffeners": [layout.model_dump(exclude={"source"}) for layout in st.stiffeners],
     }
 
@@ -138,6 +140,7 @@ def _calculation_dict(calc: HopperCalculation) -> dict[str, Any]:
         "capacity_m3": round(calc.capacity_m3, 4),
         "panels": {k: [round(v.width_mm, 2), round(v.height_mm, 2)] for k, v in calc.panels.items()},
         "profiles": {k: [v.profile, round(v.length_mm, 2), round(v.mass_kg, 2)] for k, v in calc.profiles.items()},
+        "fittings": {k: [v.kind, list(v.size_mm), round(v.mass_kg, 2)] for k, v in calc.fittings.items()},
     }
 
 
@@ -167,7 +170,7 @@ def _markdown(
         f"valley angle {calc.valley_angle_deg:.2f}°",
         f"- Capacity: {calc.capacity_m3:.2f} m³",
         f"- Mass: plates {plate_mass:.0f} kg, profiles {calc.profile_mass_kg():.0f} kg "
-        f"({len(calc.profiles)} beams and stiffeners)",
+        f"({len(calc.profiles)} beams, stiffeners and column stubs), support plates {calc.fitting_mass_kg():.0f} kg",
         "",
         "## Checks",
         "",

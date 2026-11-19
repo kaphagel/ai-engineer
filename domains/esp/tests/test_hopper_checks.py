@@ -25,8 +25,19 @@ def measurements(calc: HopperCalculation) -> dict[str, Any]:
         "valley_angle_deg": calc.valley_angle_deg,
         "capacity_m3": calc.capacity_m3,
         "profiles": {
-            n: {"kind": p.kind, "panel": p.panel, "profile": p.profile, "length_mm": p.length_mm}
+            n: {
+                "kind": p.kind,
+                "panel": p.panel,
+                "profile": p.profile,
+                "length_mm": p.length_mm,
+                "position_mm": p.position_mm,
+                "top_z_mm": p.top_z_mm,
+            }
             for n, p in calc.profiles.items()
+        },
+        "fittings": {
+            n: {"kind": f.kind, "panel": f.panel, "size_mm": f.size_mm, "position_mm": f.position_mm, "z_mm": f.z_mm}
+            for n, f in calc.fittings.items()
         },
         "solids_valid": True,
         "interferences": [],
@@ -54,6 +65,15 @@ def test_wrong_stiffener_length_or_missing_beam_fails(case: HopperCase) -> None:
     del m["profiles"]["Beam-EndInlet-J2"]
     failed = [r.id for r in checks._model_against_calculation(calc, m) if r.failed]
     assert failed == ["model.profile_set", "model.stiffeners"]
+
+
+def test_misplaced_support_stub_or_plate_fails(case: HopperCase) -> None:
+    calc = calculate(case)
+    m = measurements(calc)
+    m["profiles"]["Stub-P1375_P2000"]["position_mm"] = (1376.0, 1975.0)
+    m["fittings"]["BasePlate-M4125_M2000"]["z_mm"] = (3463.5, 3483.5)
+    failed = [r.id for r in checks._model_against_calculation(calc, m) if r.failed]
+    assert failed == ["model.stubs", "model.fittings"]
 
 
 def test_unapproved_criterion_is_never_reported_as_a_plain_pass(case: HopperCase) -> None:

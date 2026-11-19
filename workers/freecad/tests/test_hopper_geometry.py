@@ -66,3 +66,11 @@ def test_pyramid_is_the_case_without_vertical_end_walls() -> None:
 def test_inconsistent_tiers_are_rejected() -> None:
     with pytest.raises(ValueError, match="tier heights add up to"):
         spec(tier_heights_mm=[1200, 1500])
+
+
+def test_top_gap_shortens_only_the_top_panels_along_the_wall() -> None:
+    plain = {p.name: geo.flat_size(geo.flat_contour(p)) for p in geo.panels(spec())}
+    gapped = {p.name: geo.flat_size(geo.flat_contour(p)) for p in geo.panels(spec(top_gap_mm=5))}
+    assert gapped["SideLeft-T3"][1] == pytest.approx(plain["SideLeft-T3"][1] - 5)
+    assert gapped["EndOutlet-T3"][1] == pytest.approx(plain["EndOutlet-T3"][1] - 5)
+    assert gapped["SideLeft-T2"] == pytest.approx(plain["SideLeft-T2"])

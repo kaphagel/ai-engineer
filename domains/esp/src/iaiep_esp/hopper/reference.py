@@ -32,6 +32,19 @@ class ReferenceProfile(_Model):
     profile: str  # profile name in the case, for example "UPN200"
     quantity: int
     length_mm: float
+    lengths_mm: list[float] | None = None  # when the pieces differ (split beams); length_mm is then the longest
+    mass_kg: float  # total for the quantity
+
+
+class ReferenceFitting(_Model):
+    """Column or base plates on one panel, as in the part drawing's parts list."""
+
+    description: str
+    drawing: str
+    panel: str
+    kind: str  # "column plate" or "base plate"
+    quantity: int
+    size_mm: tuple[float, float, float]
     mass_kg: float  # total for the quantity
 
 
@@ -56,6 +69,7 @@ class Reference(_Model):
     data_classification: str = Field(pattern="^(internal|confidential|restricted)$")
     plates: list[ReferencePlate]
     profiles: list[ReferenceProfile] = []
+    fittings: list[ReferenceFitting] = []
     assemblies: list[ReferenceAssembly] = []
     values: list[ReferenceValue] = []
 
@@ -103,6 +117,7 @@ def compare(
             )
         )
     rows += _profiles(reference, result)
+    rows += _fittings(reference, result)
     rows += _assemblies(reference, result, density_kg_m3, thickness_mm)
     for value in reference.values:
         generated = result["measurements"].get(value.measurement)
@@ -135,7 +150,17 @@ def _profiles(reference: Reference, result: dict[str, Any]) -> list[Difference]:
             continue
         lengths = sorted({round(measured[n]["length_mm"], 1) for n in found})
         mass = sum(masses.get(n, 0.0) for n in found)
-        furthest = max(lengths, key=lambda x: abs(x - ref.length_mm))
+        if ref.lengths_mm:
+            pieces = sorted(measured[n]["length_mm"] for n in found)
+            wanted = sorted(ref.lengths_mm)
+            pairs = list(zip(pieces, wanted, strict=False))
+            worst = max(pairs, key=lambda ab: abs(ab[0] - ab[1])) if pairs else (0.0, 0.0)
+            furthest = ref.length_mm + worst[0] - worst[1]
+            expected = (
+                f"{ref.quantity} x {ref.profile} L={'/'.join(f'{x:g}' for x in ref.lengths_mm)}, {ref.mass_kg:g} kg"
+            )
+        else:
+            furthest = max(lengths, key=lambda x: abs(x - ref.length_mm))
         rows.append(
             Difference(
                 item=item,
@@ -144,6 +169,30 @@ def _profiles(reference: Reference, result: dict[str, Any]) -> list[Difference]:
                 difference=f"qty {len(found) - ref.quantity:+d}; L {furthest - ref.length_mm:+.1f} mm; "
                 f"mass {mass - ref.mass_kg:+.1f} kg",
                 largest_abs_mm=abs(furthest - ref.length_mm),
+            )
+        )
+    return rows
+
+
+def _fittings(reference: Reference, result: dict[str, Any]) -> list[Difference]:
+    measured = result["measurements"].get("fittings", {})
+    masses = _part_masses(result)
+    rows = []
+    for ref in reference.fittings:
+        found = [n for n, f in measured.items() if f["panel"] == ref.panel and f["kind"] == ref.kind]
+        item = f"{ref.description} ({ref.drawing})"
+        expected = f"{ref.quantity} x {'x'.join(f'{v:g}' for v in ref.size_mm)}, {ref.mass_kg:g} kg"
+        if not found:
+            rows.append(Difference(item=item, reference=expected, generated="not generated", difference="-"))
+            continue
+        sizes = sorted({tuple(round(v, 1) for v in measured[n]["size_mm"]) for n in found})
+        mass = sum(masses.get(n, 0.0) for n in found)
+        rows.append(
+            Difference(
+                item=item,
+                reference=expected,
+                generated=f"{len(found)} x {' / '.join('x'.join(f'{v:g}' for v in sz) for sz in sizes)}, {mass:.1f} kg",
+                difference=f"qty {len(found) - ref.quantity:+d}; mass {mass - ref.mass_kg:+.1f} kg",
             )
         )
     return rows
@@ -164,13 +213,14 @@ def _assemblies(
             )
             continue
         plate = panels[ref.panel]["flat_area_m2"] * thickness_mm / 1000 * density_kg_m3
-        attached = sum(masses.get(n, 0.0) for n, p in profiles.items() if p["panel"] == ref.panel)
+        fittings = result["measurements"].get("fittings", {})
+        attached = sum(masses.get(n, 0.0) for n, p in [*profiles.items(), *fittings.items()] if p["panel"] == ref.panel)
         mass = plate + attached
         rows.append(
             Difference(
                 item=item,
                 reference=f"{ref.mass_kg:g} kg",
-                generated=f"{mass:.1f} kg (plate {plate:.1f} + profiles {attached:.1f}, {ref.panel})",
+                generated=f"{mass:.1f} kg (plate {plate:.1f} + attached {attached:.1f}, {ref.panel})",
                 difference=f"{mass - ref.mass_kg:+.1f} kg ({(mass - ref.mass_kg) / ref.mass_kg:+.1%})",
             )
         )

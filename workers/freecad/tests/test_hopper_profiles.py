@@ -104,3 +104,82 @@ def test_bottom_clearance_is_measured_from_the_plate_bottom_not_added_to_the_edg
     found = hp.stiffeners(SPEC, PANELS, stiffening([layout]))
     assert found[0].origin[2] == pytest.approx(400)
     assert found[0].length == pytest.approx(1200 - 400 + 30)
+
+
+H_SECTION = {**CHANNEL, "kind": "h_section", "depth_mm": 160, "width_mm": 160, "web_thickness_mm": 8}
+
+
+def with_top(top: dict[str, object], supports: dict[str, object] | None = None) -> hp.Stiffening:
+    base = stiffening([])
+    data = {
+        "profiles": {"C": CHANNEL, "L": ANGLE, "H": H_SECTION},
+        "top_beams": top,
+        "supports": supports,
+    }
+    extra = hp.Stiffening.from_job(data)
+    return hp.Stiffening(
+        extra.sections,
+        base.side_beam,
+        base.end_beam,
+        base.side_beam_extensions,
+        (0.0, 0.0),
+        (),
+        extra.top,
+        extra.supports,
+    )
+
+
+TOP = {
+    "side_profile": "C",
+    "end_profile": "C",
+    "side_end_extension_mm": -10,
+    "end_end_extension_mm": 0,
+    "side_splits_mm": [-1000, 1000],
+}
+
+
+def test_top_beam_is_split_into_segments_resting_on_the_top_edge() -> None:
+    beams = [b for b in hp.top_beams(SPEC, PANELS, with_top(TOP)) if b.panel == "SideLeft-T3"]
+    top_edge = geo.flat_size(geo.flat_contour(next(p for p in PANELS if p.name == "SideLeft-T3")))[0]
+    assert [b.name for b in beams] == ["Beam-SideLeft-Top-1", "Beam-SideLeft-Top-2", "Beam-SideLeft-Top-3"]
+    assert sum(b.length for b in beams) == pytest.approx(top_edge - 20)
+    assert beams[1].length == pytest.approx(2000)
+    assert all(b.origin[2] == pytest.approx(4200 + 8.5) for b in beams)  # web thickness above the top edge
+
+
+def test_supports_stack_column_plate_stub_and_base_plate_at_each_grid_point() -> None:
+    supports = {
+        "grid_x_mm": [-4100, 0, 4100],
+        "grid_y_mm": [-2000, 2000],
+        "stub_profile": "H",
+        "stub_length_mm": 700,
+        "column_plate_top_above_top_mm": 8.5,
+        "corner_column_plate_mm": [220, 220, 15],
+        "side_column_plate_mm": [220, 190, 15],
+        "base_plate_mm": [280, 280, 20],
+        "plate_material": "-",
+    }
+    stubs, boxes = hp.supports(SPEC, PANELS, with_top(TOP, supports))
+    assert len(stubs) == 6 and len(boxes) == 12
+    corner = next(s for s in stubs if s.name == "Stub-P4100_P2000")
+    side = next(s for s in stubs if s.name == "Stub-P0_M2000")
+    assert (corner.panel, side.panel) == ("EndOutlet-T3", "SideRight-T3")
+    assert corner.origin == pytest.approx((4100, 2000, 4208.5 - 15 - 700))
+    base = next(b for b in boxes if b.name == "BasePlate-P4100_P2000")
+    assert base.centre[2] + base.size[2] == pytest.approx(corner.origin[2])
+
+
+def test_stops_shorten_single_stiffeners_at_the_top() -> None:
+    layout = {
+        "wall": "side",
+        "tier": 3,
+        "bays_mm": [1000],
+        "profiles": ["L", "L"],
+        "bottom_clearance_mm": 0,
+        "top_extension_mm": -20,
+        "stops_below_top_mm": [0, 500],
+    }
+    data = {"profiles": {"C": CHANNEL, "L": ANGLE}, "top_beams": TOP, "stiffeners": [layout]}
+    found = [s for s in hp.stiffeners(SPEC, PANELS, hp.Stiffening.from_job(data)) if s.panel == "SideLeft-T3"]
+    slant = geo.flat_size(geo.flat_contour(next(p for p in PANELS if p.name == "SideLeft-T3")))[1]
+    assert [s.length for s in found] == pytest.approx([slant - 20, slant - 520])

@@ -2,4 +2,4 @@
 
 # Must match the template in workers/freecad/iaiep_worker/templates/esp_hopper.py.
 TEMPLATE_ID = "esp.hopper"
-TEMPLATE_VERSION = "0.3.0"
+TEMPLATE_VERSION = "0.4.0"
