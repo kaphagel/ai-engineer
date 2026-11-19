@@ -24,6 +24,7 @@ def log(message):
 
 
 POINT_TOLERANCE = 0.5  # mm, model units
+EXACT_TOLERANCE = 0.01  # a view vertex this close to the model point is the point itself
 DIMENSION_TOLERANCE = 0.01  # mm
 
 # Title block fields that must contain a value.
@@ -117,9 +118,9 @@ def find_vertex(view, point):
         distance = math.hypot(p.x - target.x, p.y - target.y)
         if best is None or distance < best[0]:
             best = (distance, index)
-    if best is not None and best[0] <= POINT_TOLERANCE:
+    if best is not None and best[0] <= EXACT_TOLERANCE:
         return f"Vertex{best[1]}"
-    # The point is hidden behind other parts (only visible vertices exist): add a cosmetic vertex there.
+    # The point is hidden behind other parts, or only near another corner: add a cosmetic vertex there.
     # Cosmetic vertices use the same view coordinates and are appended to the vertex list.
     index = len(view_vertices(view))
     view.makeCosmeticVertex(target)

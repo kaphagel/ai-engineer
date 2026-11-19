@@ -74,3 +74,27 @@ def test_top_gap_shortens_only_the_top_panels_along_the_wall() -> None:
     assert gapped["SideLeft-T3"][1] == pytest.approx(plain["SideLeft-T3"][1] - 5)
     assert gapped["EndOutlet-T3"][1] == pytest.approx(plain["EndOutlet-T3"][1] - 5)
     assert gapped["SideLeft-T2"] == pytest.approx(plain["SideLeft-T2"])
+
+
+def test_plates_at_a_bend_inside_a_tier_are_mitred_on_the_bisector() -> None:
+    s = spec(end_wall_vertical_height_mm=1800)  # bend inside tier 2
+    panels = geo.panels(s)
+    cuts = geo.mitre_cuts(s, panels)
+    assert sorted(cuts) == ["EndInlet-T2-lower", "EndInlet-T2-upper", "EndOutlet-T2-lower", "EndOutlet-T2-upper"]
+    by_name = {p.name: p for p in panels}
+    lower, upper = by_name["EndOutlet-T2-lower"], by_name["EndOutlet-T2-upper"]
+    ((point, normal),) = cuts[lower.name]
+
+    def side(q: tuple[float, ...]) -> float:
+        return sum(n * (a - b) for n, a, b in zip(normal, q, point, strict=True))
+
+    # The plane holds the inner bend line and the point where both outer faces meet.
+    bend = [p for p in lower.points if p[2] == pytest.approx(1800)]
+    assert [side(p) for p in bend] == pytest.approx([0, 0], abs=1e-9)
+    n1, n2 = lower.normal, upper.normal
+    k = 5 / (1 + sum(a * b for a, b in zip(n1, n2, strict=True)))
+    outer = tuple(p + k * (a + b) for p, a, b in zip(bend[0], n1, n2, strict=True))
+    assert side(outer) == pytest.approx(0, abs=1e-9)
+    # Each plate keeps its own side.
+    assert all(side(p) <= 1e-9 for p in lower.points) and all(side(p) >= -1e-9 for p in upper.points)
+    assert cuts[upper.name][0][1] == pytest.approx(tuple(-n for n in normal))

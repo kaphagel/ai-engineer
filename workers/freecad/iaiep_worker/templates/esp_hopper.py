@@ -86,15 +86,27 @@ def _store_parameters(doc, p):
 
 def _build_plates(doc, spec):
     plates = []
-    for panel in geo.panels(spec):
+    panels = geo.panels(spec)
+    cuts = geo.mitre_cuts(spec, panels)
+    for panel in panels:
         pts = [V(*p) for p in panel.points]
         face = Part.Face(Part.makePolygon([*pts, pts[0]]))
         solid = face.extrude(V(*panel.normal) * spec.plate_thickness)
+        for point, normal in cuts.get(panel.name, []):
+            solid = solid.cut(_half_space(V(*point), V(*normal)))
         obj = doc.addObject("Part::Feature", panel.name.replace("-", "_"))
         obj.Label = panel.name
         obj.Shape = solid
         plates.append({"name": panel.name, "obj": obj, "panel": panel})
     return plates
+
+
+def _half_space(point, normal, size=1.0e5):
+    """Large box on the side of the plane through `point` that `normal` points to."""
+    u = normal.cross(V(0, 0, 1) if abs(normal.z) < 0.9 else V(1, 0, 0)).normalize()
+    w = normal.cross(u)
+    corners = [point + u * a * size + w * b * size for a, b in ((-1, -1), (1, -1), (1, 1), (-1, 1))]
+    return Part.Face(Part.makePolygon([*corners, corners[0]])).extrude(normal * size)
 
 
 def _build_profiles(doc, spec, stiffening):
@@ -263,14 +275,15 @@ def _bom(plates, spec, material):
     ):
         first = members[0][0]
         panel = first["panel"]
-        kind = "side" if panel.wall.startswith("Side") else "end"
+        kinds = {"side" if m[0]["panel"].wall.startswith("Side") else "end" for m in members}
+        kind = kinds.pop() if len(kinds) == 1 else "wall"
         unit_mass = first["obj"].Shape.Volume * 1e-9 * material["density_kg_m3"]
         items.append(
             {
                 "item": len(items) + 1,
                 "kind": "plate",
                 "mark": f"P{len(items) + 1}",
-                "description": f"{kind.capitalize()} wall panel, tier {panel.tier}",
+                "description": f"{'Wall' if kind == 'wall' else kind.capitalize() + ' wall'} panel, tier {panel.tier}",
                 "panels": [m[0]["name"] for m in members],
                 "quantity": len(members),
                 "thickness_mm": spec.plate_thickness,

@@ -12,7 +12,8 @@ Shape (spec §24.3; reference construction checked against a real delivery, see 
 - At every tier joint the upper panel starts `panel_gap` above the joint, measured along the wall.
   The top panels end `top_gap` below the top (z = H, the underside of the top beams), along the wall.
 - Panel edges are square to the plate. Material is added outwards; adjacent walls meet at the inner
-  corner line (corner joint detail not modelled).
+  corner line (corner joint detail not modelled). Where an end wall bends inside a tier, the lower and
+  upper plates are mitred on the bisector plane through the inner bend line (see mitre_cuts).
 """
 
 import math
@@ -186,6 +187,38 @@ def panels(spec: HopperSpec) -> list[Panel]:
     return result
 
 
+Plane = tuple[Vec, Vec]  # a point on the plane, and the unit normal pointing to the side to remove
+
+
+def mitre_cuts(spec: HopperSpec, panels: list[Panel]) -> dict[str, list[Plane]]:
+    """Cutting planes for plates that meet at a bend of the wall inside a tier (end walls at the change
+    from vertical to sloped). Each plate keeps its side of the bisector plane through the inner bend
+    line, so the two plates touch without overlapping."""
+    t = spec.plate_thickness
+    by_name = {p.name: p for p in panels}
+    cuts: dict[str, list[Plane]] = {}
+    for lower in panels:
+        if not lower.name.endswith("-lower"):
+            continue
+        upper = by_name.get(lower.name[: -len("lower")] + "upper")
+        if upper is None:
+            continue
+        shared = [p for p in lower.points if any(_distance(p, q) < 1e-6 for q in upper.points)]
+        if len(shared) != 2:
+            continue
+        edge = _unit(_sub(shared[1], shared[0]))
+        n1, n2 = lower.normal, upper.normal
+        k = t / (1 + _dot(n1, n2))
+        offset = (k * (n1[0] + n2[0]), k * (n1[1] + n2[1]), k * (n1[2] + n2[2]))
+        normal = _unit(_cross(edge, offset))
+        towards_upper = _dot(normal, _sub(_centroid(upper.points), shared[0]))
+        if towards_upper < 0:
+            normal = (-normal[0], -normal[1], -normal[2])
+        cuts.setdefault(lower.name, []).append((shared[0], normal))
+        cuts.setdefault(upper.name, []).append((shared[0], (-normal[0], -normal[1], -normal[2])))
+    return cuts
+
+
 def flat_contour(panel: Panel) -> list[Point2]:
     """Inner face in its own plane: u horizontal, v up the wall, origin at the lower-left corner."""
     n = panel.normal
@@ -220,6 +253,19 @@ def _panel(name: str, wall: str, tier: int, pts: list[Vec]) -> Panel:
     if normal[0] * cx + normal[1] * cy < 0:
         normal = (-normal[0], -normal[1], -normal[2])
     return Panel(name, wall, tier, tuple(pts), normal)
+
+
+def _sub(a: Vec, b: Vec) -> Vec:
+    return a[0] - b[0], a[1] - b[1], a[2] - b[2]
+
+
+def _distance(a: Vec, b: Vec) -> float:
+    return math.sqrt(_dot(_sub(a, b), _sub(a, b)))
+
+
+def _centroid(points: tuple[Vec, ...]) -> Vec:
+    n = len(points)
+    return sum(p[0] for p in points) / n, sum(p[1] for p in points) / n, sum(p[2] for p in points) / n
 
 
 def _unit(v: Vec) -> Vec:
