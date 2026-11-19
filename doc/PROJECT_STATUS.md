@@ -1,12 +1,12 @@
 # IAIEP – Project status and handoff
 
-**Last updated:** 2026-11-19 (AI spike done)
-**Current phase:** Phase 0 – Repository and technical foundation (in progress)
-**State:** both Phase 0 spikes done. Next: repository setup. The Anthropic key works but the account has no credit yet.
+**Last updated:** 2026-11-19 (Phase 0 complete)
+**Current phase:** Phase 1 – Feasibility prototype (starting, with synthetic data)
+**State:** Phase 0 is complete: spikes done, project tooling and CI in place (ADR-0003). Next: the parametric hopper template with synthetic data. Testing uses the local Ollama model; the Anthropic account still has no credit.
 
 To resume, open this repository in VS Code (Dev Container) and tell the coding agent:
 
-> Read `doc/PROJECT_STATUS.md` and `doc/IAIEP_Comprehensive_Specification_v1.2.md`, then continue Phase 0 from "Next steps".
+> Read `doc/PROJECT_STATUS.md` and `doc/IAIEP_Comprehensive_Specification_v1.2.md`, then continue from "Next steps".
 
 ---
 
@@ -17,6 +17,7 @@ To resume, open this repository in VS Code (Dev Container) and tell the coding a
 | [IAIEP_Comprehensive_Specification_v1.2.md](IAIEP_Comprehensive_Specification_v1.2.md) | The specification. Single source of architectural intent. |
 | [adr/0001-freecad-headless-execution.md](adr/0001-freecad-headless-execution.md) | FreeCAD spike results and decisions. |
 | [adr/0002-llm-tool-calling.md](adr/0002-llm-tool-calling.md) | AI tool-calling spike results and decisions. |
+| [adr/0003-repository-conventions.md](adr/0003-repository-conventions.md) | Layout, tooling, coding, testing and schema conventions. |
 | [archive/IAIEP_Comprehensive_Specification_v1.1.md](archive/IAIEP_Comprehensive_Specification_v1.1.md) | Superseded version, kept for history only. |
 | [../spikes/freecad-headless/README.md](../spikes/freecad-headless/README.md) | How to rerun the FreeCAD spike. |
 
@@ -74,16 +75,30 @@ See ADR-0002. In short:
 - Model `qwen3:30b-a3b`: 3/3 runs correct; tool called, schema valid, 6.0 m converted to 6000 mm, missing plate thickness flagged and not invented, source quotes genuine. About 4.5 minutes per call.
 - Calls go through the OpenAI-compatible interface (`LLM_BASE_URL`, `LLM_MODEL`, `LLM_API_KEY`), so switching to Claude is a configuration change.
 
+### Phase 0: project tooling — done
+
+See ADR-0003. `pyproject.toml` with uv (`uv.lock`), Ruff (lint and format), mypy (strict) and pytest; package `src/iaiep/` with the first module `iaiep.config` (model endpoint settings from environment variables). GitHub Actions CI runs all checks on every push and pull request. The Dev Container runs `uv sync` on creation. Spec §30 stays the decision register (no separate `open-decisions.md`).
+
+### Reference drawings (received 19 Nov 2026)
+
+Company drawings are stored in `doc/drawings/`, which is **git-ignored** (confidential, D-15). Only use them with local models.
+
+- `ESP Hopper/` (5 sheets, DWG, 2012): pyramidal hoppers with stiffener rings, vertical stiffeners and support frame; note "Plate thickness 5 mm". Exported from CATIA as flattened lines: no text objects, no dimensions, sheet scale. Useful as a shape and layout reference only. The title block suggests a fabric filter hopper; to be confirmed.
+- Two earlier fabric filter hopper sets (one CATIA PDF with text and delivery lists, one scanned plot PDF) were reviewed and then removed from the folder.
+- Missing for Phase 1: the **input documents** (customer specification, design basis) for a reference case, and dimensioned drawings or a STEP export.
+
 ## 3. Next steps
 
-### Phase 0 (developer / coding agent)
+### Phase 1 (developer / coding agent), with synthetic data
 
-1. **Repository setup** (no AI key needed):
-   - `pyproject.toml` (uv), Ruff, mypy or Pyright, pytest.
-   - GitHub Actions CI (lint, type check, tests). The GitHub repository already exists.
-   - `doc/open-decisions.md` mirroring spec §30, or keep §30 as the register and reference it.
-2. **AI spike with Claude** (when the account has credit): rerun `spikes/llm-tool-calling` against Claude (README has the command), compare with the local model, and update ADR-0002 and X-02.
-3. Update this file and the spec's §30 when Phase 0 is complete.
+1. Hopper input schema (Pydantic): dimensions, plate thickness, material, with units and source references. Design criteria (for example minimum valley angle) are labelled placeholders until the engineering owner sets them (E-02).
+2. FreeCAD worker container in `workers/freecad/`, based on the spike Dockerfile.
+3. Hopper template modelled as individual welded plates (ADR-0001), with geometry checks (valley and wall angles, volume, interface dimensions).
+4. Outputs: STEP AP242, drawing PDF marked "DRAFT – NOT FOR FABRICATION" with automatic drawing checks, DXF flat patterns per plate.
+5. Command-line pipeline: parameter file in, outputs and check report out.
+6. Later: document extraction and AI extraction (Ollama), results stored in PostgreSQL.
+
+Optional, when the Anthropic account has credit: rerun `spikes/llm-tool-calling` against Claude and update ADR-0002 and X-02.
 
 ### Product owner actions (needed before Phase 1)
 

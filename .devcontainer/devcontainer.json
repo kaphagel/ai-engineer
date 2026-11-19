@@ -11,6 +11,7 @@
   "remoteEnv": {
     "LOCAL_WORKSPACE_FOLDER": "${localWorkspaceFolder}"
   },
+  "postCreateCommand": "uv sync",
   "forwardPorts": ["postgres:5432", "nats:4222", "nats:8222"],
   "portsAttributes": {
     "postgres:5432": { "label": "PostgreSQL" },
@@ -19,6 +20,9 @@
   },
   "customizations": {
     "vscode": {
+      "settings": {
+        "python.defaultInterpreterPath": "/workspace/.venv/bin/python"
+      },
       "extensions": [
         "ms-python.python",
         "charliermarsh.ruff",
