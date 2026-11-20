@@ -106,7 +106,7 @@ def _profiles_against_calculation(calc: HopperCalculation, measured: dict[str, A
             src,
         )
     ]
-    for kind in ("beam", "top_beam", "stiffener", "stub"):
+    for kind in ("beam", "top_beam", "stiffener", "stub", "bracing"):
         expected = {n: p for n, p in calc.profiles.items() if p.kind == kind}
         if not expected:
             continue
@@ -126,9 +126,17 @@ def _profiles_against_calculation(calc: HopperCalculation, measured: dict[str, A
                 worst = max(worst, deviation)
             if deviation > LENGTH_TOL_MM or got["profile"] != part.profile or got["panel"] != part.panel:
                 wrong.append(f"{name}: model {got['profile']} L={got['length_mm']:.1f} on {got['panel']}")
-        what = "length and position" if kind == "stub" else "length"
-        detail = f"{len(expected)} {kind.replace('_', ' ')}s; largest {what} difference {worst:.2f} mm"
-        checks.append(_check(f"model.{kind}s", not wrong, detail + (f"; wrong: {wrong[:4]}" if wrong else ""), src))
+        what = "length and position" if kind in ("stub", "bracing") else "length"
+        label = "bracing tube" if kind == "bracing" else kind.replace("_", " ")
+        detail = f"{len(expected)} {label}s; largest {what} difference {worst:.2f} mm"
+        checks.append(
+            _check(
+                "model.bracing" if kind == "bracing" else f"model.{kind}s",
+                not wrong,
+                detail + (f"; wrong: {wrong[:4]}" if wrong else ""),
+                src,
+            )
+        )
     return checks
 
 

@@ -2,7 +2,7 @@
 
 **Last updated:** 2026-11-19 (Phase 1, hopper template step 1 done)
 **Current phase:** Phase 1 – Feasibility prototype (in progress)
-**State:** The hopper pipeline runs end to end (input set → FreeCAD worker → model, drawing PDF, STEP, flat-pattern DXF, BOM → checks and report) and is tested against a real reference delivery (ADR-0004). Template steps 2 (tier beams and stiffeners) and 3 (top beams and support interface) are done, and the stiffening now follows engineering rules (with explicit overrides), so the hopper adapts to changes of size: a sweep of 12 size and shape variants passes all checks. Step 4 (support brackets, simplified) is done; next: bracing and corner joints, then accessories and the conveyor. Testing uses the local Ollama model; the Anthropic account still has no credit.
+**State:** The hopper pipeline runs end to end (input set → FreeCAD worker → model, drawing PDF, STEP, flat-pattern DXF, BOM → checks and report) and is tested against a real reference delivery (ADR-0004). Template steps 2 (tier beams and stiffeners) and 3 (top beams and support interface) are done, and the stiffening now follows engineering rules (with explicit overrides), so the hopper adapts to changes of size: a sweep of 12 size and shape variants passes all checks. Steps 4 (support brackets, simplified) and 5 (internal bracing) are done; next: accessories (inspection doors, level studs, covers, corner plates), then the conveyor. Testing uses the local Ollama model; the Anthropic account still has no credit.
 
 To resume, open this repository in VS Code (Dev Container) and tell the coding agent:
 
@@ -88,13 +88,13 @@ Company data is **confidential (D-15)** and lives only in git-ignored folders: `
 - **Main reference: a complete issued ESP delivery (2025)** in `doc/drawings/`: all sub-deliveries (casing, hopper, internals, rapping, nozzles, support structure, walkways, penthouse) with delivery lists (PDF/XLSX), CATIA-exported DWG and PDF drawings with text, and 3D exports for some. Not yet received: the folders with customer documents and meeting notes, which are needed for the AI extraction test (F-3).
 - Earlier, smaller sets (fabric filter hoppers, an older pyramidal hopper DWG without dimensions) were reviewed and are superseded by the delivery above.
 
-### Phase 1: hopper pipeline and template — steps 1 to 4 done
+### Phase 1: hopper pipeline and template — steps 1 to 5 done
 
 - **FreeCAD worker** (`workers/freecad/`, ADR-0001 amended): two phases (headless build, then GUI offscreen PDF export). A deadlock of the FreeCAD GUI in offscreen mode was found and fixed (notification area; finding 9), verified with 60 of 60 export runs.
-- **Template `esp.hopper` 0.5.0** (ADR-0004): trough or pyramidal hopper from flat wall panels in tiers, with panel and top gaps, tier beams and split top beams (channels), vertical stiffeners (angles), support column stubs (H sections) with column and base plates at the support grid, and simplified support brackets, from a profile catalogue and bracket plate lists in the input set. Outputs: native model, STEP AP242, drawing PDF (sheet and scale chosen automatically, title block, dimensions, parts list, notes, DRAFT marking), one DXF flat pattern per distinct panel, BOM.
+- **Template `esp.hopper` 0.6.0** (ADR-0004): trough or pyramidal hopper from flat wall panels in tiers, with panel and top gaps, tier beams and split top beams (channels), vertical stiffeners (angles), support column stubs (H sections) with column and base plates at the support grid, simplified support brackets and the internal bracing (tubes), from a profile catalogue and bracket plate lists in the input set. Outputs: native model, STEP AP242, drawing PDF (sheet and scale chosen automatically, title block, dimensions, parts list, notes, DRAFT marking), one DXF flat pattern per distinct panel, BOM.
 - **Platform**: `iaiep.cad.worker` (runs a job in the worker container), `iaiep.checks`, and the ESP domain package `domains/esp` (`iaiep_esp.hopper`: input set with a source per value, independent calculation, checks, reference comparison, command `iaiep-hopper`).
 - **Rules with overrides** (ADR-0004): stiffener spacing, support grid, beam extensions and top beam splits follow rules unless given explicitly; unapproved rules are reported as such.
-- **Checks** (76 on the reference case, including that no part reaches inside the hopper): worker drawing checks; model against the independent calculation (panel sizes, slopes, valley angle, capacity, interferences, beams, stiffeners, column stubs and support plates); design criterion (reported as unapproved while it is a placeholder); BOM counts and masses of plates, profiles and support plates; each DXF read back; PDF text (status marking, main dimensions); native model opens with all parts visible.
+- **Checks** (77 on the reference case, including that no part reaches inside the hopper): worker drawing checks; model against the independent calculation (panel sizes, slopes, valley angle, capacity, interferences, beams, stiffeners, column stubs and support plates); design criterion (reported as unapproved while it is a placeholder); BOM counts and masses of plates, profiles and support plates; each DXF read back; PDF text (status marking, main dimensions); native model opens with all parts visible.
 - **Reference result**: generated panel plates match the issued part drawings within 0.3–2.5 mm and their masses within 0.2 %, except the middle-tier end panel (+21.8 mm, joint allowance to be explained by the engineering owner). Beam and stiffener counts match; lengths within 2 mm apart from the same plate differences; welded wall panel net masses within −0.9 % to +0.7 %. Top panels: plates within 2 mm; beams, stubs and support plates match; with the simplified brackets the welded top panels are −1.7 % (side) and −13.5 % (end; corner brackets simplified).
 
 Run:
@@ -110,11 +110,10 @@ uv run iaiep-hopper data/reference/esp-project/hopper_case.toml \
 
 ### Phase 1 (developer / coding agent)
 
-1. **Step 5:** bracing and corner joints.
-2. **Step 6:** inspection door openings, level studs, protective covers; then the conveyor template and a drawing set closer to the reference (sections, details).
-3. Document extraction and AI extraction (Ollama) of the hopper input set, once the reference input documents are available (F-3).
-4. Store runs, inputs and check results in PostgreSQL with internal versions (spec §25 Phase 1).
-5. Repeatability measurement (F-6) and the remaining F-criteria.
+1. **Step 6:** inspection door openings, level studs, protective covers; then the conveyor template and a drawing set closer to the reference (sections, details).
+2. Document extraction and AI extraction (Ollama) of the hopper input set, once the reference input documents are available (F-3).
+3. Store runs, inputs and check results in PostgreSQL with internal versions (spec §25 Phase 1).
+4. Repeatability measurement (F-6) and the remaining F-criteria.
 
 Optional, when the Anthropic account has credit: rerun `spikes/llm-tool-calling` against Claude (synthetic data only) and update ADR-0002 and X-02.
 

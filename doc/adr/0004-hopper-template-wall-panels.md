@@ -22,7 +22,7 @@ Template `esp.hopper` 0.2.0 replaces 0.1.0 and generalizes it:
 - Every input value carries its source. Tolerances, standard notes (weld quality, execution class) and design criteria come from the design basis; the minimum valley angle stays a labelled, unapproved placeholder until the engineering owner sets it (E-02).
 - The geometry rules are pure Python (unit-tested). The platform calculates the same quantities with a separate implementation and checks the model against it.
 
-Not yet modelled: bracing, corner joint plates, welds, inspection door and level studs.
+Not yet modelled: corner joint plates, welds, inspection door and level studs.
 
 ### Step 2 (template 0.3.0): tier beams and stiffeners
 
@@ -55,6 +55,15 @@ The issued brackets consist of about ten shaped plates each. They are modelled i
 - The reference column plates sit on top of the top beams (the 800 mm column dimension and section H-H of the side top panel).
 
 Result on the reference case: welded top side panel −1.7 %, welded top end panel −13.5 %. The corner brackets of the delivery are arranged diagonally between the corner column and both walls; the simplified arrangement trims them too much (open item, together with the corner joint details).
+
+### Step 5 (template 0.6.0): internal bracing
+
+Bracing runs across the hopper between the side walls on the inner support column lines (or given positions), as rules that reproduce the issued lengths:
+
+- **Struts** at the tier joints (every joint unless given): a tube with an end plate at each end; the end plates reach a given overhang beyond the inner wall face (through the panel gap), and project a given length beyond the tube.
+- **Top truss:** two tubes a given distance apart below the top, each ending a given clearance from the inner wall face, joined by a web plate between the tube surfaces.
+- Tubes are a new profile kind. Bracing lies inside the hopper by design, so it is not part of the `model.outside_hopper` check.
+- On the reference case all bracing tube lengths match the drawings within 1.1 mm; the plates are 6 kg heavier (the issued end plates are tapered).
 
 ### Flexibility: rules with explicit overrides
 

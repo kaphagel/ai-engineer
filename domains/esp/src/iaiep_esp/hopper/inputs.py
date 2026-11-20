@@ -97,12 +97,12 @@ class Profile(_Model):
     """Rolled section from a catalogue. The mass per metre is used for the BOM; the dimensions only
     shape the 3D model (nominal, no root radii)."""
 
-    kind: Literal["channel", "angle", "h_section"]
+    kind: Literal["channel", "angle", "h_section", "tube"]
     designation: str = Field(min_length=1)
     standard: str = Field(min_length=1)
     material: str = Field(min_length=1)
-    depth_mm: float = Field(gt=0)  # channel, H: web depth; angle: outstanding leg
-    width_mm: float = Field(gt=0)  # channel, H: flange width; angle: leg on the plate
+    depth_mm: float = Field(gt=0)  # channel, H: web depth; angle: outstanding leg; tube: outside diameter
+    width_mm: float = Field(gt=0)  # channel, H: flange width; angle: leg on the plate; tube: outside diameter
     web_thickness_mm: float = Field(gt=0)
     flange_thickness_mm: float = Field(gt=0)
     mass_per_m_kg: float = Field(gt=0)
@@ -268,6 +268,46 @@ class Brackets(_Model):
     source: str = Field(min_length=1)
 
 
+class Strut(_Model):
+    """Horizontal tube across the hopper (between the side walls) at a tier joint, with an end plate at
+    each end passing through the panel gap."""
+
+    joint: int | None = Field(default=None, ge=1)  # 1 = between tiers 1 and 2; none: every tier joint
+    tube_profile: str
+    end_plate_mm: list[float] = Field(min_length=3, max_length=3)  # along the strut, height, thickness
+    overhang_mm: float  # end plate beyond the inner wall face, each end
+    plate_projection_mm: float = Field(gt=0)  # end plate beyond the tube end
+    level_offset_mm: float = 0  # strut axis above the joint
+
+
+class TopTruss(_Model):
+    """Two tubes across the hopper below the top, joined by a vertical web plate."""
+
+    tube_profile: str
+    upper_below_top_mm: float = Field(gt=0)  # upper tube axis below the top (z = height)
+    depth_mm: float = Field(gt=0)  # between the tube axes
+    end_clearance_mm: float = Field(ge=0)  # tube end to the inner wall face
+    web_thickness_mm: float = Field(gt=0)
+    web_end_inset_mm: float = Field(ge=0)  # web plate ends inside the lower tube ends
+
+
+class Bracing(_Model):
+    """Internal bracing across the hopper, on the inner support column lines or at given positions."""
+
+    at_columns: bool = False
+    x_mm: list[float] | None = None
+    struts: list[Strut] = []
+    top_truss: TopTruss | None = None
+    material: str = Field(min_length=1)
+    source: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _positions(self) -> Self:
+        if self.at_columns == (self.x_mm is not None):
+            raise ValueError("bracing: give either at_columns = true or x_mm")
+        return self
+
+
 TierPosition = Literal["bottom", "middle", "top"]
 
 
@@ -307,6 +347,7 @@ class Stiffening(_Model):
     top_beams: TopBeams | None = None
     supports: Supports | None = None
     brackets: Brackets | None = None
+    bracing: Bracing | None = None
     stiffeners: list[StiffenerLayout] = []  # explicit layouts; they override the rules
     rules: StiffeningRules | None = None
 
@@ -360,6 +401,16 @@ class HopperCase(_Model):
             wanted.append((st.supports.stub_profile, "h_section"))
         if st.rules is not None:
             wanted += [(p, "angle") for p in (st.rules.standard_profile, st.rules.column_profile) if p is not None]
+        if st.bracing is not None:
+            wanted += [(s.tube_profile, "tube") for s in st.bracing.struts]
+            if st.bracing.top_truss is not None:
+                wanted.append((st.bracing.top_truss.tube_profile, "tube"))
+            if st.bracing.at_columns and st.supports is None:
+                errors.append("bracing at_columns needs supports")
+            if any(
+                s.joint is not None and s.joint >= len(self.parameters.tier_heights_mm.value) for s in st.bracing.struts
+            ):
+                errors.append("a bracing strut is not at a tier joint")
         for name, kind in wanted:
             if name not in self.profiles or self.profiles[name].kind != kind:
                 errors.append(f"profile {name!r} must be a {kind} in [profiles]")

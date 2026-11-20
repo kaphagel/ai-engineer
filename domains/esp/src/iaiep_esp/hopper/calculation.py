@@ -20,7 +20,7 @@ class PanelSize:
 
 @dataclass(frozen=True)
 class ProfilePart:
-    kind: str  # "beam", "top_beam", "stiffener" or "stub"
+    kind: str  # "beam", "top_beam", "stiffener", "stub" or "bracing"
     panel: str
     profile: str
     length_mm: float
@@ -158,7 +158,7 @@ def calculate(case: HopperCase) -> HopperCalculation:
         valley_angle_deg=math.degrees(valley),
         capacity_m3=capacity,
         panels=panels,
-        profiles=_profiles(case, pieces, len(tiers), h),
+        profiles=_profiles(case, pieces, len(tiers), h) | _bracing_tubes(case, half_w, h),
         fittings=_fittings(case, pieces, h)
         | _brackets(
             case,
@@ -168,7 +168,8 @@ def calculate(case: HopperCase) -> HopperCalculation:
                 "side": lambda z: half_w(z) + t / math.sin(side),
                 "end": lambda z: ls / 2 + (lt - ls) / 2 * (z - hv) / (h - hv) + t / math.sin(end),
             },
-        ),
+        )
+        | _bracing_plates(case, half_w, h),
     )
 
 
@@ -452,3 +453,82 @@ def _outside_wall(polygon: list[tuple[float, float]], wall: Callable[[float], fl
     if len(unique) > 1 and math.dist(unique[0], unique[-1]) <= 1e-6:
         unique.pop()
     return unique
+
+
+BRACING = "Bracing"
+
+
+def _bracing_tubes(case: HopperCase, half_w: Callable[[float], float], h: float) -> dict[str, ProfilePart]:
+    st = case.stiffening
+    br = st.bracing if st else None
+    if br is None or br.x_mm is None:
+        return {}
+    tiers = case.parameters.tier_heights_mm.value
+    result = {}
+    for x in br.x_mm:
+        tag = f"{x:+.0f}".replace("+", "P").replace("-", "M")
+        members: list[tuple[str, str, float, float]] = []  # name, profile, axis z, length
+        for s in br.struts:
+            if s.joint is None:
+                raise ValueError("bracing struts not resolved")
+            z = sum(tiers[: s.joint]) + s.level_offset_mm
+            span = 2 * (half_w(z) + s.overhang_mm) - 2 * s.plate_projection_mm
+            members.append((f"Strut-{tag}-J{s.joint}", s.tube_profile, z, span))
+        if br.top_truss is not None:
+            tt = br.top_truss
+            for label, z in (("upper", h - tt.upper_below_top_mm), ("lower", h - tt.upper_below_top_mm - tt.depth_mm)):
+                members.append((f"Truss-{tag}-{label}", tt.tube_profile, z, 2 * (half_w(z) - tt.end_clearance_mm)))
+        for name, profile, z, length in members:
+            if length <= 0:
+                raise ValueError(f"{name}: no room for the bracing tube")
+            p = case.profiles[profile]
+            mass = p.mass_per_m_kg * length / 1000
+            result[name] = ProfilePart("bracing", BRACING, profile, length, mass, (x, 0.0), z + p.depth_mm / 2)
+    return result
+
+
+def _bracing_plates(case: HopperCase, half_w: Callable[[float], float], h: float) -> dict[str, Fitting]:
+    st = case.stiffening
+    br = st.bracing if st else None
+    if br is None or br.x_mm is None:
+        return {}
+    density = case.material.density_kg_m3.value
+    tiers = case.parameters.tier_heights_mm.value
+    result = {}
+    for x in br.x_mm:
+        tag = f"{x:+.0f}".replace("+", "P").replace("-", "M")
+        for s in br.struts:
+            if s.joint is None:
+                raise ValueError("bracing struts not resolved")
+            z = sum(tiers[: s.joint]) + s.level_offset_mm
+            half = half_w(z) + s.overhang_mm
+            length, height, t = s.end_plate_mm
+            volume = length * height * t
+            for side, y in (("L", half - length / 2), ("R", -half + length / 2)):
+                result[f"Strut-{tag}-J{s.joint}-{side}"] = Fitting(
+                    "bracing plate",
+                    BRACING,
+                    (t, length, height),
+                    (x, y),
+                    (z - height / 2, z + height / 2),
+                    volume * 1e-9 * density,
+                    volume,
+                )
+        if br.top_truss is not None:
+            tt = br.top_truss
+            z_up = h - tt.upper_below_top_mm
+            z_low = z_up - tt.depth_mm
+            tube = case.profiles[tt.tube_profile].depth_mm
+            span = 2 * (half_w(z_low) - tt.end_clearance_mm - tt.web_end_inset_mm)
+            height = tt.depth_mm - tube
+            volume = span * height * tt.web_thickness_mm
+            result[f"Truss-{tag}-web"] = Fitting(
+                "bracing plate",
+                BRACING,
+                (tt.web_thickness_mm, span, height),
+                (x, 0.0),
+                (z_low + tube / 2, z_up - tube / 2),
+                volume * 1e-9 * density,
+                volume,
+            )
+    return result

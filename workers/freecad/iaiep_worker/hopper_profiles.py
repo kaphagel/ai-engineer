@@ -19,6 +19,9 @@ Construction (checked against a real delivery, see ADR-0004):
   column line (shape from the geometry), and the other plates of the issued bracket (sizes from the
   input) in a simplified box arrangement around it. Corner brackets are moved along the end wall so
   that they stay on the plate.
+- Bracing runs across the hopper between the side walls on given x positions (the inner support column
+  lines): a strut (tube with an end plate at each end, through the panel gap) at given tier joints, and
+  a truss of two tubes joined by a web plate below the top.
 - Simplified representation: sections are drawn with the nominal dimensions (no root radii), the mass
   comes from the catalogue mass per metre; copes, cut-outs and corner connections are not modelled, so
   parts may overlap at connections (reported, not an error).
@@ -30,7 +33,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from iaiep_worker.hopper_geometry import HopperSpec, Panel, Vec
+from iaiep_worker.hopper_geometry import HopperSpec, Panel, Vec, inner_shape
 
 TOL = 1e-6
 
@@ -38,7 +41,7 @@ TOL = 1e-6
 @dataclass(frozen=True)
 class Section:
     name: str
-    kind: str  # "channel", "angle" or "h_section"
+    kind: str  # "channel", "angle", "h_section" or "tube"
     designation: str
     standard: str
     material: str
@@ -81,6 +84,7 @@ class Stiffening:
     top: "TopBeams | None" = None
     supports: "Supports | None" = None
     brackets: "Brackets | None" = None
+    bracing: Mapping[str, Any] | None = None  # job data, see bracing()
 
     @classmethod
     def from_job(cls, data: Mapping[str, Any] | None) -> "Stiffening":
@@ -123,6 +127,7 @@ class Stiffening:
             top=TopBeams.from_job(data["top_beams"]) if data.get("top_beams") else None,
             supports=Supports.from_job(data["supports"]) if data.get("supports") else None,
             brackets=Brackets.from_job(data["brackets"]) if data.get("brackets") else None,
+            bracing=data.get("bracing") or None,
         )
         result.validate()
         return result
@@ -569,6 +574,89 @@ def clip_to_wall(polygon: list[tuple[float, float]], wall_n: Callable[[float], f
     if len(cleaned) > 1 and math.dist(cleaned[0], cleaned[-1]) <= 1e-6:
         cleaned.pop()
     return cleaned
+
+
+BRACING_PANEL = "Bracing"
+
+
+def bracing(spec: HopperSpec, stiffening: Stiffening) -> tuple[list[Stub], list[Slab]]:
+    """Tubes and plates of the internal bracing (along y, between the side walls)."""
+    data = stiffening.bracing
+    if not data:
+        return [], []
+    width = inner_shape(spec).half_width
+    joints = [sum(spec.tier_heights[:k]) for k in range(1, len(spec.tier_heights))]
+    along: Vec = (0.0, 1.0, 0.0)
+    tubes: list[Stub] = []
+    plates: list[Slab] = []
+    material = data["material"]
+    for x in data["x_mm"]:
+        tag = f"{x:+.0f}".replace("+", "P").replace("-", "M")
+        for strut in data.get("struts", []):
+            section = stiffening.sections[strut["tube_profile"]]
+            k = int(strut["joint"])
+            z = joints[k - 1] + float(strut.get("level_offset_mm", 0.0))
+            half = width(z) + float(strut["overhang_mm"])
+            projection = float(strut["plate_projection_mm"])
+            plate_len, plate_h, plate_t = (float(v) for v in strut["end_plate_mm"])
+            name = f"Strut-{tag}-J{k}"
+            tubes.append(
+                Stub(name, BRACING_PANEL, section, 2 * (half - projection), (x, -(half - projection), z), along)
+            )
+            for end in (-1.0, 1.0):
+                y0 = end * half if end < 0 else half - plate_len
+                outline = [
+                    (x - plate_t / 2, y0, z - plate_h / 2),
+                    (x - plate_t / 2, y0 + plate_len, z - plate_h / 2),
+                    (x - plate_t / 2, y0 + plate_len, z + plate_h / 2),
+                    (x - plate_t / 2, y0, z + plate_h / 2),
+                ]
+                plates.append(
+                    Slab(
+                        f"{name}-{'L' if end > 0 else 'R'}",
+                        BRACING_PANEL,
+                        "end plate",
+                        plate_t,
+                        (plate_len, plate_h),
+                        tuple(outline),
+                        (plate_t, 0.0, 0.0),
+                        material,
+                        "bracing plate",
+                    )
+                )
+        truss = data.get("top_truss")
+        if truss:
+            section = stiffening.sections[truss["tube_profile"]]
+            z_up = spec.height - float(truss["upper_below_top_mm"])
+            z_low = z_up - float(truss["depth_mm"])
+            clearance = float(truss["end_clearance_mm"])
+            half_low = width(z_low) - clearance
+            for label, z in (("upper", z_up), ("lower", z_low)):
+                half = width(z) - clearance
+                tubes.append(Stub(f"Truss-{tag}-{label}", BRACING_PANEL, section, 2 * half, (x, -half, z), along))
+            t = float(truss["web_thickness_mm"])
+            web_half = half_low - float(truss["web_end_inset_mm"])
+            z0, z1 = z_low + section.depth / 2, z_up - section.depth / 2
+            outline = [
+                (x - t / 2, -web_half, z0),
+                (x - t / 2, web_half, z0),
+                (x - t / 2, web_half, z1),
+                (x - t / 2, -web_half, z1),
+            ]
+            plates.append(
+                Slab(
+                    f"Truss-{tag}-web",
+                    BRACING_PANEL,
+                    "web",
+                    t,
+                    (round(2 * web_half, 1), round(z1 - z0, 1)),
+                    tuple(outline),
+                    (t, 0.0, 0.0),
+                    material,
+                    "bracing plate",
+                )
+            )
+    return tubes, plates
 
 
 def _half_extent_at(panel: Panel, along: Vec, z: float) -> float:

@@ -40,11 +40,29 @@ def resolve(case: HopperCase) -> HopperCase:
     if top_beams is not None and top_beams.split_at_columns:
         top_beams = top_beams.model_copy(update={"side_splits_mm": inner_columns, "split_at_columns": False})
 
+    bracing = st.bracing
+    if bracing is not None:
+        struts = [
+            s.model_copy(update={"joint": k}) if s.joint is None else s
+            for s in bracing.struts
+            for k in ([s.joint] if s.joint is not None else range(1, joints + 1))
+        ]
+        update: dict[str, object] = {"struts": struts}
+        if bracing.at_columns:
+            update |= {"at_columns": False, "x_mm": inner_columns}
+        bracing = bracing.model_copy(update=update)
+
     stiffeners = list(st.stiffeners)
     if st.rules is not None:
         stiffeners += _rule_layouts(case, st.rules, st.stiffeners, inner_columns)
     resolved = st.model_copy(
-        update={"tier_beams": tier_beams, "top_beams": top_beams, "supports": supports, "stiffeners": stiffeners}
+        update={
+            "tier_beams": tier_beams,
+            "top_beams": top_beams,
+            "supports": supports,
+            "bracing": bracing,
+            "stiffeners": stiffeners,
+        }
     )
     return case.model_copy(update={"stiffening": resolved})
 

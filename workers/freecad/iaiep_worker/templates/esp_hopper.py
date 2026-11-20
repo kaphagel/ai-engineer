@@ -2,9 +2,9 @@
 
 The geometry rules are in iaiep_worker.hopper_geometry (pure Python, unit-tested). This module turns
 the panels into FreeCAD solids, measures the model, and produces the BOM, flat patterns, drawing and
-exports. Tier beams, top beams, stiffeners, support column stubs and support brackets are placed by
-iaiep_worker.hopper_profiles (also pure Python). Bracing, corner joint plates, copes and welds are not
-modelled in this template version.
+exports. Tier beams, top beams, stiffeners, support column stubs, support brackets and the internal
+bracing are placed by iaiep_worker.hopper_profiles (also pure Python). Corner joint plates, copes and
+welds are not modelled in this template version.
 """
 
 import hashlib
@@ -23,7 +23,7 @@ from iaiep_worker import layout as lay
 from iaiep_worker import panel as pnl
 
 TEMPLATE_ID = "esp.hopper"
-VERSION = "0.5.0"
+VERSION = "0.6.0"
 
 V = App.Vector
 
@@ -130,6 +130,16 @@ def _build_profiles(doc, spec, stiffening):
     for stub in stubs:
         section = [V(*stub.origin) + V(a, b, 0) for a, b in hp.h_section(stub.section)]
         parts.append(_profile_part(doc, stub, "stub", section, stub.along))
+    tubes, bracing_plates = hp.bracing(spec, stiffening)
+    for tube in tubes:
+        r, t = tube.section.depth / 2, tube.section.web_thickness
+        obj = doc.addObject("Part::Feature", tube.name.replace("-", "_"))
+        obj.Label = tube.name
+        start, axis = V(*tube.origin), V(*tube.along)
+        obj.Shape = Part.makeCylinder(r, tube.length, start, axis).cut(
+            Part.makeCylinder(r - t, tube.length, start, axis)
+        )
+        parts.append({"name": tube.name, "obj": obj, "part": tube, "kind": "bracing"})
     fittings = []
     for box in boxes:
         (cx, cy, z), (sx, sy, t) = box.centre, box.size
@@ -137,7 +147,7 @@ def _build_profiles(doc, spec, stiffening):
         obj.Label = box.name
         obj.Shape = Part.makeBox(sx, sy, t, V(cx - sx / 2, cy - sy / 2, z))
         fittings.append({"name": box.name, "obj": obj, "part": box, "kind": "fitting"})
-    for slab in hp.brackets(spec, panels, stiffening):
+    for slab in [*hp.brackets(spec, panels, stiffening), *bracing_plates]:
         pts = [V(*p) for p in slab.outline]
         obj = doc.addObject("Part::Feature", slab.name.replace("-", "_"))
         obj.Label = slab.name
@@ -216,7 +226,7 @@ def _measure(plates, profiles, fittings, spec):
         # Copes, cut-outs and corner connections are not modelled: overlaps there are expected.
         "connection_overlaps": [o for o in plate_profile if not o["own_plate"]] + _overlaps(attached, attached),
         # Nothing outside the plates may reach into the space the bulk material fills.
-        "inside_hopper": _inside_hopper(attached, shape),
+        "inside_hopper": _inside_hopper([a for a in attached if a["part"].panel != hp.BRACING_PANEL], shape),
     }
 
 
@@ -263,8 +273,8 @@ def _measure_profile(profile):
         "length_mm": round(max(positions) - min(positions), 2),
         "section_area_mm2": round(shape.Volume / part.length, 2),
     }
-    if profile["kind"] == "stub":
-        bb = shape.BoundBox
+    if profile["kind"] in ("stub", "bracing"):
+        bb = shape.optimalBoundingBox()
         result["position_mm"] = [round(bb.Center.x, 2), round(bb.Center.y, 2)]
         result["top_z_mm"] = round(bb.ZMax, 2)
     return result
@@ -349,8 +359,9 @@ def _profile_bom(profiles, start):
     ):
         counters[kind] += 1
         section = members[0]["part"].section
-        places = sorted({(hp.wall_kind(m["part"].panel), _tier(m["part"].panel)) for m in members})
-        where = f", {places[0][0]} wall tier {places[0][1]}" if len(places) == 1 else ""
+        panels = {m["part"].panel for m in members}
+        places = sorted({(hp.wall_kind(p), _tier(p)) for p in panels if p != hp.BRACING_PANEL})
+        where = f", {places[0][0]} wall tier {places[0][1]}" if len(places) == 1 and len(panels) == 1 else ""
         unit_mass = hp.mass_kg(section, members[0]["part"].length)
         items.append(
             {
@@ -376,6 +387,7 @@ PROFILE_KINDS = {
     "top_beam": ("T", "Top beam"),
     "stiffener": ("S", "Stiffener"),
     "stub": ("C", "Column stub"),
+    "bracing": ("R", "Bracing tube"),
 }
 
 
@@ -389,13 +401,13 @@ def _fitting_bom(fittings, material, start):
     items = []
     for (kind, size), members in sorted(groups.items()):
         unit_mass = members[0]["obj"].Shape.Volume * 1e-9 * material["density_kg_m3"]
-        where = "at support" if kind != "bracket plate" else "of support bracket"
+        where = {"bracket plate": "of support bracket", "bracing plate": ""}.get(kind, "at support")
         items.append(
             {
                 "item": start + len(items) + 1,
                 "kind": "fitting",
                 "mark": f"F{len(items) + 1}",
-                "description": f"{kind.capitalize()} {where}",
+                "description": f"{kind.capitalize()} {where}".strip(),
                 "parts": [m["name"] for m in members],
                 "quantity": len(members),
                 "section": f"PL {size[2]:g}x{size[0]:g}x{size[1]:g}",
@@ -626,7 +638,7 @@ def _notes(spec, material, meta, m, bom):
     profile_materials = sorted({i["material"] for i in bom if i["kind"] != "plate"})
     if profile_materials:
         notes.append(f"{len(notes)}. PROFILES {', '.join(profile_materials)}; MASS FROM CATALOGUE kg/m.")
-    notes.append(f"{len(notes)}. SUPPORT BRACKETS SIMPLIFIED. BRACING, CORNER JOINTS, COPES AND WELDS NOT SHOWN.")
+    notes.append(f"{len(notes)}. SUPPORT BRACKETS SIMPLIFIED. CORNER JOINTS, COPES AND WELDS NOT SHOWN.")
     # Standard notes come from the design basis (spec §12.8); never chosen by the template.
     notes += [f"{len(notes) + i}. {text}" for i, text in enumerate(meta.get("standard_notes", []))]
     return notes

@@ -63,7 +63,8 @@ def test_beams_and_stiffeners_agree_with_the_independent_worker_placement(
         *hp.stiffeners(spec, panels, stiffening),
     ]
     stubs, boxes = hp.supports(spec, panels, stiffening)
-    placed += [*hp.top_beams(spec, panels, stiffening), *stubs]
+    tubes, bracing_plates = hp.bracing(spec, stiffening)
+    placed += [*hp.top_beams(spec, panels, stiffening), *stubs, *tubes]
     assert {p.name: (p.panel, p.section.name) for p in placed} == {
         n: (p.panel, p.profile) for n, p in calc.profiles.items()
     }
@@ -73,8 +74,10 @@ def test_beams_and_stiffeners_agree_with_the_independent_worker_placement(
         fitting = calc.fittings[box.name]
         assert (box.panel, box.size) == (fitting.panel, fitting.size_mm)
         assert box.centre == pytest.approx((*fitting.position_mm, fitting.z_mm[0]))
-    slabs = hp.brackets(spec, panels, stiffening)
-    assert {s.name for s in slabs} == {n for n, f in calc.fittings.items() if f.kind == "bracket plate"}
+    slabs = [*hp.brackets(spec, panels, stiffening), *bracing_plates]
+    assert {s.name for s in slabs} == {
+        n for n, f in calc.fittings.items() if f.kind.endswith("plate") and n not in [b.name for b in boxes]
+    }
     for slab in slabs:
         fitting = calc.fittings[slab.name]
         corners = [*slab.outline, *(tuple(a + b for a, b in zip(p, slab.extrude, strict=True)) for p in slab.outline)]
