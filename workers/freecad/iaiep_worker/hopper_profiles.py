@@ -15,6 +15,10 @@ Construction (checked against a real delivery, see ADR-0004):
 - Supports: a short H-section column stub at every support grid point on the hopper perimeter, with a
   column plate on top (level with the top beams) and a base plate below. Corner points belong to the
   end walls, the others to the side walls. Bracket plates connecting stubs and panels are not modelled.
+- Brackets connect each stub to its top panel: a gusset between the stub and the sloped wall on the
+  column line (shape from the geometry), and the other plates of the issued bracket (sizes from the
+  input) in a simplified box arrangement around it. Corner brackets are moved along the end wall so
+  that they stay on the plate.
 - Simplified representation: sections are drawn with the nominal dimensions (no root radii), the mass
   comes from the catalogue mass per metre; copes, cut-outs and corner connections are not modelled, so
   parts may overlap at connections (reported, not an error).
@@ -22,7 +26,7 @@ Construction (checked against a real delivery, see ADR-0004):
 
 import itertools
 import math
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -76,6 +80,7 @@ class Stiffening:
     layouts: tuple[StiffenerLayout, ...]
     top: "TopBeams | None" = None
     supports: "Supports | None" = None
+    brackets: "Brackets | None" = None
 
     @classmethod
     def from_job(cls, data: Mapping[str, Any] | None) -> "Stiffening":
@@ -117,6 +122,7 @@ class Stiffening:
             ),
             top=TopBeams.from_job(data["top_beams"]) if data.get("top_beams") else None,
             supports=Supports.from_job(data["supports"]) if data.get("supports") else None,
+            brackets=Brackets.from_job(data["brackets"]) if data.get("brackets") else None,
         )
         result.validate()
         return result
@@ -199,6 +205,61 @@ class Supports:
             triple("base_plate_mm"),
             d["plate_material"],
         )
+
+
+@dataclass(frozen=True)
+class BracketPlateSpec:
+    role: str  # gusset, back, side, bottom, bar (see iaiep_esp.hopper.inputs.BracketPlate)
+    thickness: float
+    size: tuple[float, float]
+    quantity: int
+    level: float
+
+    @classmethod
+    def from_job(cls, d: Mapping[str, Any]) -> "BracketPlateSpec":
+        a, b = (float(v) for v in (d.get("size_mm") or (0.0, 0.0)))
+        return cls(d["role"], float(d["thickness_mm"]), (a, b), int(d.get("quantity", 1)), float(d.get("level_mm", 0)))
+
+
+@dataclass(frozen=True)
+class Brackets:
+    depth: float
+    side: tuple[BracketPlateSpec, ...]
+    corner: tuple[BracketPlateSpec, ...]
+    material: str
+
+    @classmethod
+    def from_job(cls, d: Mapping[str, Any]) -> "Brackets":
+        return cls(
+            float(d["depth_mm"]),
+            tuple(BracketPlateSpec.from_job(x) for x in d["side"]),
+            tuple(BracketPlateSpec.from_job(x) for x in d["corner"]),
+            d["material"],
+        )
+
+
+@dataclass(frozen=True)
+class Slab:
+    """Flat plate of constant thickness: a face polygon swept along `extrude`."""
+
+    name: str
+    panel: str
+    role: str
+    thickness: float
+    plate_size: tuple[float, float]  # for the BOM
+    outline: tuple[Vec, ...]
+    extrude: Vec
+    material: str
+    kind: str = "bracket plate"
+
+
+@dataclass(frozen=True)
+class SupportPoint:
+    name: str
+    panel: Panel
+    x: float
+    y: float
+    corner: bool
 
 
 @dataclass(frozen=True)
@@ -338,33 +399,200 @@ def _top_z(panel: Panel) -> float:
     return max(p[2] for p in panel.points)
 
 
-def supports(spec: HopperSpec, panels: Sequence[Panel], stiffening: Stiffening) -> tuple[list[Stub], list[Box]]:
-    """Column stubs with column and base plates at the support grid points on the hopper perimeter."""
-    sup = stiffening.supports
-    if sup is None:
-        return [], []
-    section = stiffening.sections[sup.stub_profile]
-    top_panels = {p.wall: p.name for p in top_tier_panels(spec, panels)}
-    stubs, boxes = [], []
-    top_level = spec.height + sup.top_above_hopper_top
+def support_points(spec: HopperSpec, panels: Sequence[Panel], sup: "Supports") -> list[SupportPoint]:
+    """Grid points on the perimeter: corners carried by the end walls, the others by the side walls."""
+    top_panels = {p.wall: p for p in top_tier_panels(spec, panels)}
+    points = []
     for i, x in enumerate(sup.grid_x):
         corner = i in (0, len(sup.grid_x) - 1)
         for y in sup.grid_y:
             end = "EndInlet" if i == 0 else "EndOutlet"
             wall = end if corner else "SideLeft" if y > 0 else "SideRight"
             name = f"{x:+.0f}_{y:+.0f}".replace("+", "P").replace("-", "M")
-            panel = top_panels[wall]
-            plate = sup.corner_plate if corner else sup.side_plate
-            stub_top = top_level - plate[2]
-            stub_bottom = stub_top - sup.stub_length
-            dy = 0.0 if corner else math.copysign(sup.side_plate_offset, y)
-            boxes.append(Box(f"ColumnPlate-{name}", panel, "column plate", (x, y + dy, stub_top), plate, sup.material))
-            stubs.append(Stub(f"Stub-{name}", panel, section, sup.stub_length, (x, y, stub_bottom)))
-            base = sup.base_plate
-            boxes.append(
-                Box(f"BasePlate-{name}", panel, "base plate", (x, y, stub_bottom - base[2]), base, sup.material)
-            )
+            points.append(SupportPoint(name, top_panels[wall], x, y, corner))
+    return points
+
+
+def supports(spec: HopperSpec, panels: Sequence[Panel], stiffening: Stiffening) -> tuple[list[Stub], list[Box]]:
+    """Column stubs with column and base plates at the support grid points on the hopper perimeter."""
+    sup = stiffening.supports
+    if sup is None:
+        return [], []
+    section = stiffening.sections[sup.stub_profile]
+    stubs, boxes = [], []
+    top_level = spec.height + sup.top_above_hopper_top
+    for point in support_points(spec, panels, sup):
+        x, y, corner, name, panel = point.x, point.y, point.corner, point.name, point.panel.name
+        plate = sup.corner_plate if corner else sup.side_plate
+        stub_top = top_level - plate[2]
+        stub_bottom = stub_top - sup.stub_length
+        dy = 0.0 if corner else math.copysign(sup.side_plate_offset, y)
+        boxes.append(Box(f"ColumnPlate-{name}", panel, "column plate", (x, y + dy, stub_top), plate, sup.material))
+        stubs.append(Stub(f"Stub-{name}", panel, section, sup.stub_length, (x, y, stub_bottom)))
+        base = sup.base_plate
+        boxes.append(Box(f"BasePlate-{name}", panel, "base plate", (x, y, stub_bottom - base[2]), base, sup.material))
     return stubs, boxes
+
+
+def brackets(spec: HopperSpec, panels: Sequence[Panel], stiffening: Stiffening) -> list[Slab]:
+    """Bracket plates at every support point (simplified arrangement, see the module docstring)."""
+    sup, br = stiffening.supports, stiffening.brackets
+    if sup is None or br is None:
+        return []
+    section = stiffening.sections[sup.stub_profile]
+    z_top, z_bottom = spec.height, spec.height - br.depth
+    result = []
+    for point in support_points(spec, panels, sup):
+        panel = point.panel
+        side_wall = wall_kind(panel.wall) == "side"
+        along: Vec = (1.0, 0.0, 0.0) if side_wall else (0.0, 1.0, 0.0)
+        sign = math.copysign(1.0, point.y if side_wall else point.x)
+        out: Vec = (0.0, sign, 0.0) if side_wall else (sign, 0.0, 0.0)
+        a_col = point.x if side_wall else point.y
+        extent = section.depth if side_wall else section.width  # stub size across the wall
+        n_stub = (point.y if side_wall else point.x) * sign - extent / 2
+        plates = br.corner if point.corner else br.side
+        back_row = sum(p.size[0] * p.quantity for p in plates if p.role == "back")
+        half_row = back_row / 2 if back_row else max((p.thickness for p in plates if p.role == "gusset"), default=0) / 2
+        a_c = a_col
+        if point.corner:  # keep the bracket on the end wall plate
+            limit = _half_extent_at(panel, along, z_bottom) - half_row
+            a_c = math.copysign(min(abs(a_col), max(limit, 0.0)), a_col)
+
+        def wall_n(z: float, panel: Panel = panel, out: Vec = out, along: Vec = along) -> float:
+            """Outer wall face along `out` at height z (the wall plane has no component along the wall)."""
+            n = panel.normal
+            d = _dot(n, panel.points[0]) + spec.plate_thickness
+            return (d - n[2] * z) / _dot(n, out)
+
+        def at(a: float, n: float, z: float, along: Vec = along, out: Vec = out) -> Vec:
+            return _add(_add(_scale(along, a), _scale(out, n)), (0.0, 0.0, z))
+
+        k = 0
+
+        def add(
+            role: str,
+            spec_: BracketPlateSpec,
+            size: tuple[float, float],
+            outline: list[Vec],
+            extrude: Vec,
+            point: SupportPoint = point,
+        ) -> None:
+            nonlocal k
+            k += 1
+            result.append(
+                Slab(
+                    f"Bracket-{point.name}-{k:02d}",
+                    point.panel.name,
+                    role,
+                    spec_.thickness,
+                    size,
+                    tuple(outline),
+                    extrude,
+                    br.material,
+                )
+            )
+
+        def plate_at(
+            role: str,
+            spec_: BracketPlateSpec,
+            a: tuple[float, float],
+            n: tuple[float, float],
+            z: tuple[float, float],
+            size: tuple[float, float] | None = None,
+            wall_n: Callable[[float], float] = wall_n,
+            at: Callable[[float, float, float], Vec] = at,
+            point: SupportPoint = point,
+            along: Vec = along,
+        ) -> None:
+            """Box over the ranges a, n, z, trimmed by the outer wall face (the plate is cut to the wall)."""
+            section = clip_to_wall([(n[0], z[0]), (n[1], z[0]), (n[1], z[1]), (n[0], z[1])], wall_n)
+            if len(section) < 3:
+                raise ValueError(f"support {point.name}: a {role} plate lies entirely inside the wall")
+            if size is None:  # gusset: its size follows from the trimmed shape
+                ns, zs = [q[0] for q in section], [q[1] for q in section]
+                size = (round(max(zs) - min(zs), 1), round(max(ns) - min(ns), 1))
+            add(role, spec_, size, [at(a[0], q[0], q[1]) for q in section], _scale(along, a[1] - a[0]))
+
+        inward = -math.copysign(1.0, a_col) if point.corner else -1.0
+        bottom_row = sum(p.size[0] * p.quantity for p in plates if p.role == "bottom")
+        cursor: dict[str, float] = {"back": -back_row / 2, "bottom": -bottom_row / 2}
+        side_count = 0
+        for plate in plates:
+            t, (l1, l2) = plate.thickness, plate.size
+            left, right = a_c - half_row, a_c + half_row  # bar rows start beside the bracket
+            for q in range(plate.quantity):
+                if plate.role == "gusset":
+                    span = (a_c - t / 2, a_c + t / 2)
+                    plate_at("gusset", plate, span, (wall_n(z_bottom), n_stub), (z_bottom, z_top))
+                elif plate.role == "back":
+                    a0 = a_c + cursor["back"]
+                    cursor["back"] += l1
+                    plate_at("back", plate, (a0, a0 + l1), (n_stub - t, n_stub), (z_top - l2, z_top), (l1, l2))
+                elif plate.role == "side":
+                    end = inward if side_count % 2 == 0 else -inward
+                    side_count += 1
+                    a0 = a_c + half_row if end > 0 else a_c - half_row - t
+                    plate_at("side", plate, (a0, a0 + t), (n_stub - l1, n_stub), (z_top - l2, z_top), (l1, l2))
+                elif plate.role == "bottom":
+                    a0 = a_c + cursor["bottom"]
+                    cursor["bottom"] += l1
+                    plate_at("bottom", plate, (a0, a0 + l1), (n_stub - l2, n_stub), (z_bottom - t, z_bottom), (l1, l2))
+                else:  # bar on the outer wall face
+                    z0 = z_bottom + plate.level
+                    if q % 2 == 0:
+                        left -= l1
+                        a0 = left
+                    else:
+                        a0 = right
+                        right += l1
+                    plate_at("bar", plate, (a0, a0 + l1), (wall_n(z0), wall_n(z0) + l2), (z0, z0 + t), (l1, l2))
+    return result
+
+
+def clip_to_wall(polygon: list[tuple[float, float]], wall_n: Callable[[float], float]) -> list[tuple[float, float]]:
+    """Part of a polygon in (n, z) on or outside the wall face n = wall_n(z) (wall_n linear in z)."""
+    inside = [n - wall_n(z) >= -TOL for n, z in polygon]
+    result = []
+    for k, (p, p_in) in enumerate(zip(polygon, inside, strict=True)):
+        q, q_in = polygon[(k + 1) % len(polygon)], inside[(k + 1) % len(polygon)]
+        if p_in:
+            result.append(p)
+        if p_in != q_in:
+            fp, fq = p[0] - wall_n(p[1]), q[0] - wall_n(q[1])
+            r = fp / (fp - fq)
+            result.append((p[0] + r * (q[0] - p[0]), p[1] + r * (q[1] - p[1])))
+    cleaned: list[tuple[float, float]] = []
+    for pt in result:
+        if not cleaned or math.dist(pt, cleaned[-1]) > 1e-6:
+            cleaned.append(pt)
+    if len(cleaned) > 1 and math.dist(cleaned[0], cleaned[-1]) <= 1e-6:
+        cleaned.pop()
+    return cleaned
+
+
+def _half_extent_at(panel: Panel, along: Vec, z: float) -> float:
+    """Largest distance from the axis, along `along`, of the panel outline at height z."""
+    found = []
+    pts = list(panel.points)
+    for p, q in zip(pts, [*pts[1:], pts[0]], strict=True):
+        if min(p[2], q[2]) - TOL <= z <= max(p[2], q[2]) + TOL and abs(q[2] - p[2]) > TOL:
+            r = (z - p[2]) / (q[2] - p[2])
+            found.append(abs(_dot(along, p) + r * (_dot(along, q) - _dot(along, p))))
+    if not found:
+        raise ValueError(f"{panel.name}: no outline at z = {z:.1f}")
+    return max(found)
+
+
+def slab_volume(slab: Slab) -> float:
+    """Polygon area (Newell) times the sweep length."""
+    n = [0.0, 0.0, 0.0]
+    pts = list(slab.outline)
+    for a, b in zip(pts, [*pts[1:], pts[0]], strict=True):
+        n[0] += (a[1] - b[1]) * (a[2] + b[2])
+        n[1] += (a[2] - b[2]) * (a[0] + b[0])
+        n[2] += (a[0] - b[0]) * (a[1] + b[1])
+    return math.sqrt(n[0] ** 2 + n[1] ** 2 + n[2] ** 2) / 2 * math.sqrt(_dot(slab.extrude, slab.extrude))
 
 
 def stiffeners(spec: HopperSpec, panels: Sequence[Panel], stiffening: Stiffening) -> list[Stiffener]:
@@ -420,10 +648,6 @@ def h_section(section: Section) -> list[tuple[float, float]]:
         (-b, -h), (b, -h), (b, -h + tf), (tw, -h + tf), (tw, h - tf), (b, h - tf),
         (b, h), (-b, h), (-b, h - tf), (-tw, h - tf), (-tw, -h + tf), (-b, -h + tf),
     ]  # fmt: skip
-
-
-def box_mass_kg(box: Box, density_kg_m3: float) -> float:
-    return box.size[0] * box.size[1] * box.size[2] * 1e-9 * density_kg_m3
 
 
 def stiffener_section(stiffener: Stiffener) -> list[tuple[float, float]]:

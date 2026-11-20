@@ -2,9 +2,9 @@
 
 The geometry rules are in iaiep_worker.hopper_geometry (pure Python, unit-tested). This module turns
 the panels into FreeCAD solids, measures the model, and produces the BOM, flat patterns, drawing and
-exports. Tier beams, top beams, stiffeners and support column stubs are placed by
-iaiep_worker.hopper_profiles (also pure Python). Brackets at the supports, bracing, corner joint
-plates, copes and welds are not modelled in this template version.
+exports. Tier beams, top beams, stiffeners, support column stubs and support brackets are placed by
+iaiep_worker.hopper_profiles (also pure Python). Bracing, corner joint plates, copes and welds are not
+modelled in this template version.
 """
 
 import hashlib
@@ -23,7 +23,7 @@ from iaiep_worker import layout as lay
 from iaiep_worker import panel as pnl
 
 TEMPLATE_ID = "esp.hopper"
-VERSION = "0.4.0"
+VERSION = "0.5.0"
 
 V = App.Vector
 
@@ -137,6 +137,12 @@ def _build_profiles(doc, spec, stiffening):
         obj.Label = box.name
         obj.Shape = Part.makeBox(sx, sy, t, V(cx - sx / 2, cy - sy / 2, z))
         fittings.append({"name": box.name, "obj": obj, "part": box, "kind": "fitting"})
+    for slab in hp.brackets(spec, panels, stiffening):
+        pts = [V(*p) for p in slab.outline]
+        obj = doc.addObject("Part::Feature", slab.name.replace("-", "_"))
+        obj.Label = slab.name
+        obj.Shape = Part.Face(Part.makePolygon([*pts, pts[0]])).extrude(V(*slab.extrude))
+        fittings.append({"name": slab.name, "obj": obj, "part": slab, "kind": "fitting"})
     return parts, fittings
 
 
@@ -209,7 +215,39 @@ def _measure(plates, profiles, fittings, spec):
         "interferences": _overlaps(plates, plates) + [o for o in plate_profile if o["own_plate"]],
         # Copes, cut-outs and corner connections are not modelled: overlaps there are expected.
         "connection_overlaps": [o for o in plate_profile if not o["own_plate"]] + _overlaps(attached, attached),
+        # Nothing outside the plates may reach into the space the bulk material fills.
+        "inside_hopper": _inside_hopper(attached, shape),
     }
+
+
+INSIDE_TOLERANCE = 5.0  # mm; tier beams legitimately touch the bulk material through the panel gaps
+
+
+def _inner_volume(shape):
+    """Solid bounded by the inner plate surfaces moved INSIDE_TOLERANCE inwards, from the slot to the top."""
+    hv, h = shape.end_wall_vertical_height, shape.height
+
+    def rectangle(z):
+        lx, ly = shape.half_length(z) - INSIDE_TOLERANCE, shape.half_width(z) - INSIDE_TOLERANCE
+        pts = [V(-lx, -ly, z), V(lx, -ly, z), V(lx, ly, z), V(-lx, ly, z)]
+        return Part.makePolygon([*pts, pts[0]])
+
+    levels = [0.0, *([hv] if 0 < hv < h else []), h]
+    solids = [Part.makeLoft([rectangle(a), rectangle(b)], True, True) for a, b in itertools.pairwise(levels)]
+    return solids[0] if len(solids) == 1 else solids[0].fuse(solids[1:])
+
+
+def _inside_hopper(parts, shape):
+    inner = _inner_volume(shape)
+    found = []
+    for part in parts:
+        solid = part["obj"].Shape
+        if not solid.BoundBox.intersect(inner.BoundBox):
+            continue
+        volume = solid.common(inner).Volume
+        if volume > 1.0:
+            found.append({"part": part["name"], "volume_mm3": round(volume, 1)})
+    return found
 
 
 def _measure_profile(profile):
@@ -240,6 +278,7 @@ def _measure_fitting(fitting):
         "size_mm": [round(bb.XLength, 2), round(bb.YLength, 2), round(bb.ZLength, 2)],
         "position_mm": [round(bb.Center.x, 2), round(bb.Center.y, 2)],
         "z_mm": [round(bb.ZMin, 2), round(bb.ZMax, 2)],
+        "volume_mm3": round(fitting["obj"].Shape.Volume, 1),
     }
 
 
@@ -341,20 +380,22 @@ PROFILE_KINDS = {
 
 
 def _fitting_bom(fittings, material, start):
-    """Column and base plates: one item per kind and size; mass from the plate volume."""
+    """Column, base and bracket plates: one item per kind and plate size; mass from the plate volume."""
     groups = {}
     for f in fittings:
-        box = f["part"]
-        groups.setdefault((box.kind, box.size), []).append(f)
+        part = f["part"]
+        size = (*part.plate_size, part.thickness) if isinstance(part, hp.Slab) else part.size
+        groups.setdefault((part.kind, size), []).append(f)
     items = []
     for (kind, size), members in sorted(groups.items()):
-        unit_mass = hp.box_mass_kg(members[0]["part"], material["density_kg_m3"])
+        unit_mass = members[0]["obj"].Shape.Volume * 1e-9 * material["density_kg_m3"]
+        where = "at support" if kind != "bracket plate" else "of support bracket"
         items.append(
             {
                 "item": start + len(items) + 1,
                 "kind": "fitting",
                 "mark": f"F{len(items) + 1}",
-                "description": f"{kind.capitalize()} at support",
+                "description": f"{kind.capitalize()} {where}",
                 "parts": [m["name"] for m in members],
                 "quantity": len(members),
                 "section": f"PL {size[2]:g}x{size[0]:g}x{size[1]:g}",
@@ -585,7 +626,7 @@ def _notes(spec, material, meta, m, bom):
     profile_materials = sorted({i["material"] for i in bom if i["kind"] != "plate"})
     if profile_materials:
         notes.append(f"{len(notes)}. PROFILES {', '.join(profile_materials)}; MASS FROM CATALOGUE kg/m.")
-    notes.append(f"{len(notes)}. BRACKETS AT SUPPORTS, BRACING, CORNER JOINTS, COPES AND WELDS NOT SHOWN.")
+    notes.append(f"{len(notes)}. SUPPORT BRACKETS SIMPLIFIED. BRACING, CORNER JOINTS, COPES AND WELDS NOT SHOWN.")
     # Standard notes come from the design basis (spec §12.8); never chosen by the template.
     notes += [f"{len(notes) + i}. {text}" for i, text in enumerate(meta.get("standard_notes", []))]
     return notes

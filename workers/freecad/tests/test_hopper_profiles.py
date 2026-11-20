@@ -183,3 +183,10 @@ def test_stops_shorten_single_stiffeners_at_the_top() -> None:
     found = [s for s in hp.stiffeners(SPEC, PANELS, hp.Stiffening.from_job(data)) if s.panel == "SideLeft-T3"]
     slant = geo.flat_size(geo.flat_contour(next(p for p in PANELS if p.name == "SideLeft-T3")))[1]
     assert [s.length for s in found] == pytest.approx([slant - 20, slant - 520])
+
+
+def test_clip_to_wall_keeps_only_the_part_outside_the_wall_face() -> None:
+    # Wall face n = 100 + 0.5 z: a 200 x 100 rectangle from n = 50 is cut along that line.
+    section = hp.clip_to_wall([(50, 0), (250, 0), (250, 100), (50, 100)], lambda z: 100 + 0.5 * z)
+    assert sorted((round(n, 9), round(z, 9)) for n, z in section) == [(100, 0), (150, 100), (250, 0), (250, 100)]
+    assert hp.clip_to_wall([(0, 0), (10, 0), (10, 10), (0, 10)], lambda z: 100.0) == []

@@ -39,6 +39,7 @@ class Fitting:
     position_mm: tuple[float, float]
     z_mm: tuple[float, float]  # bottom and top
     mass_kg: float
+    volume_mm3: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -158,7 +159,16 @@ def calculate(case: HopperCase) -> HopperCalculation:
         capacity_m3=capacity,
         panels=panels,
         profiles=_profiles(case, pieces, len(tiers), h),
-        fittings=_fittings(case, pieces, h),
+        fittings=_fittings(case, pieces, h)
+        | _brackets(
+            case,
+            pieces,
+            h,
+            {
+                "side": lambda z: half_w(z) + t / math.sin(side),
+                "end": lambda z: ls / 2 + (lt - ls) / 2 * (z - hv) / (h - hv) + t / math.sin(end),
+            },
+        ),
     )
 
 
@@ -242,6 +252,8 @@ class _SupportPoint:
     panel: str
     plate: tuple[float, float, float]  # column plate
     plate_offset_y: float  # column plate centre from the grid line, across the hopper
+    corner: bool = False
+    half_along: Callable[[float], float] | None = None  # inner half size of the top panel along the wall
 
 
 def _support_points(case: HopperCase, pieces: list[_Piece], h: float) -> dict[str, _SupportPoint]:
@@ -262,7 +274,8 @@ def _support_points(case: HopperCase, pieces: list[_Piece], h: float) -> dict[st
             a, b, c = sup.corner_column_plate_mm if corner else sup.side_column_plate_mm
             name = f"{x:+.0f}_{y:+.0f}".replace("+", "P").replace("-", "M")
             offset = 0.0 if corner else math.copysign(sup.side_column_plate_outward_offset_mm, y)
-            points[name] = _SupportPoint((x, y), top_piece[wall], (a, b, c), offset)
+            piece = next(p for p in pieces if p.name == top_piece[wall])
+            points[name] = _SupportPoint((x, y), top_piece[wall], (a, b, c), offset, corner, piece.half)
     return points
 
 
@@ -319,3 +332,123 @@ def _integrate(f: Callable[[float], float], a: float, b: float, steps: int = 200
         return 0.0
     dz = (b - a) / steps
     return dz * (sum(f(a + i * dz) for i in range(1, steps)) + (f(a) + f(b)) / 2)
+
+
+def _brackets(
+    case: HopperCase, pieces: list[_Piece], h: float, outer: dict[str, Callable[[float], float]]
+) -> dict[str, Fitting]:
+    """Bracket plates at every support (arrangement in ADR-0004), as bounding boxes with their mass.
+
+    Coordinates per support: a along the wall (x for side walls, y for end walls), n outward across the
+    wall (|y| or |x|), z up. `outer` gives the outer wall face n at height z for each wall type.
+    """
+    st = case.stiffening
+    br = st.brackets if st else None
+    sup = st.supports if st else None
+    if br is None or sup is None:
+        return {}
+    stub = case.profiles[sup.stub_profile]
+    density = case.material.density_kg_m3.value
+    z_top, z_bot = h, h - br.depth_mm
+    result: dict[str, Fitting] = {}
+    for name, point in _support_points(case, pieces, h).items():
+        x, y = point.xy
+        side_wall = not point.corner
+        sign = math.copysign(1.0, y if side_wall else x)
+        a_col = x if side_wall else y
+        n_stub = abs(y if side_wall else x) - (stub.depth_mm if side_wall else stub.width_mm) / 2
+        wall = outer["side" if side_wall else "end"]
+        plates = br.side if side_wall else br.corner
+        back_row = sum((p.size_mm or [0.0])[0] * p.quantity for p in plates if p.role == "back")
+        gussets = [p.thickness_mm for p in plates if p.role == "gusset"]
+        half_row = back_row / 2 if back_row else (max(gussets) / 2 if gussets else 0.0)
+        a_c = a_col
+        if point.corner:
+            assert point.half_along is not None
+            a_c = math.copysign(min(abs(a_col), max(point.half_along(z_bot) - half_row, 0.0)), a_col)
+        bottom_row = sum((p.size_mm or [0.0])[0] * p.quantity for p in plates if p.role == "bottom")
+        back_at, bottom_at = a_c - back_row / 2, a_c - bottom_row / 2
+        inward = -math.copysign(1.0, a_col) if point.corner else -1.0
+        sides = 0
+        count = 0
+
+        def box(
+            a: tuple[float, float],
+            n: tuple[float, float],
+            z: tuple[float, float],
+            sign: float = sign,
+            side_wall: bool = side_wall,
+            point: _SupportPoint = point,
+            wall: Callable[[float], float] = wall,
+            name: str = name,
+        ) -> Fitting:
+            """Plate over the ranges a, n, z, cut where it would reach inside the outer wall face."""
+            section = _outside_wall([(n[0], z[0]), (n[1], z[0]), (n[1], z[1]), (n[0], z[1])], wall)
+            if len(section) < 3:
+                raise ValueError(f"support {name}: a bracket plate lies entirely inside the wall")
+            area = abs(sum(p[0] * q[1] - q[0] * p[1] for p, q in zip(section, [*section[1:], section[0]], strict=True)))
+            ns = (min(q[0] for q in section), max(q[0] for q in section))
+            zs = (min(q[1] for q in section), max(q[1] for q in section))
+            ys = sorted((sign * ns[0], sign * ns[1]))
+            xr, yr = (a, (ys[0], ys[1])) if side_wall else ((ys[0], ys[1]), a)
+            volume = area / 2 * (a[1] - a[0])
+            return Fitting(
+                "bracket plate",
+                point.panel,
+                (xr[1] - xr[0], yr[1] - yr[0], zs[1] - zs[0]),
+                ((xr[0] + xr[1]) / 2, (yr[0] + yr[1]) / 2),
+                zs,
+                volume * 1e-9 * density,
+                volume,
+            )
+
+        for plate in plates:
+            t = plate.thickness_mm
+            l1, l2 = plate.size_mm or (0.0, 0.0)
+            left, right = a_c - half_row, a_c + half_row  # bar rows start beside the bracket
+            for q in range(plate.quantity):
+                count += 1
+                key = f"Bracket-{name}-{count:02d}"
+                if plate.role == "gusset":
+                    result[key] = box((a_c - t / 2, a_c + t / 2), (wall(z_bot), n_stub), (z_bot, z_top))
+                elif plate.role == "back":
+                    result[key] = box((back_at, back_at + l1), (n_stub - t, n_stub), (z_top - l2, z_top))
+                    back_at += l1
+                elif plate.role == "side":
+                    end = inward if sides % 2 == 0 else -inward
+                    sides += 1
+                    a0 = a_c + half_row if end > 0 else a_c - half_row - t
+                    result[key] = box((a0, a0 + t), (n_stub - l1, n_stub), (z_top - l2, z_top))
+                elif plate.role == "bottom":
+                    result[key] = box((bottom_at, bottom_at + l1), (n_stub - l2, n_stub), (z_bot - t, z_bot))
+                    bottom_at += l1
+                else:  # bar on the outer wall face
+                    z0 = z_bot + plate.level_mm
+                    if q % 2 == 0:
+                        left -= l1
+                        a_range = (left, left + l1)
+                    else:
+                        a_range = (right, right + l1)
+                        right += l1
+                    result[key] = box(a_range, (wall(z0), wall(z0) + l2), (z0, z0 + t))
+    return result
+
+
+def _outside_wall(polygon: list[tuple[float, float]], wall: Callable[[float], float]) -> list[tuple[float, float]]:
+    """Sutherland-Hodgman clip of a polygon in (n, z) to the half plane n >= wall(z)."""
+    out: list[tuple[float, float]] = []
+    for k, p in enumerate(polygon):
+        q = polygon[k - 1]
+        dp, dq = p[0] - wall(p[1]), q[0] - wall(q[1])
+        if (dp >= -1e-6) != (dq >= -1e-6):
+            r = dq / (dq - dp)
+            out.append((q[0] + r * (p[0] - q[0]), q[1] + r * (p[1] - q[1])))
+        if dp >= -1e-6:
+            out.append(p)
+    unique: list[tuple[float, float]] = []
+    for pt in out:
+        if not unique or math.dist(pt, unique[-1]) > 1e-6:
+            unique.append(pt)
+    if len(unique) > 1 and math.dist(unique[0], unique[-1]) <= 1e-6:
+        unique.pop()
+    return unique

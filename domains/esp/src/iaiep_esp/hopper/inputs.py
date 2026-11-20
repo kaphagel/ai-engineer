@@ -229,6 +229,45 @@ class Supports(_Model):
         return self
 
 
+class BracketPlate(_Model):
+    """One plate of a support bracket (simplified arrangement, see ADR-0004).
+
+    gusset: between the stub and the sloped wall, on the column line; its shape follows the geometry
+        (only the thickness is given).
+    back: vertical, against the inner face of the stub, in a row along the wall centred on the bracket;
+        size = (along the wall, height).
+    side: vertical, square to the wall at the ends of the back row; size = (towards the hopper, height).
+    bottom: horizontal under the bracket, in a row along the wall; size = (along the wall, towards the
+        hopper from the stub face).
+    bar: horizontal flat bar on the outer wall face, `level_mm` above the bracket bottom, placed beside
+        the bracket alternately left and right; size = (along the wall, outward from the wall).
+    """
+
+    role: Literal["gusset", "back", "side", "bottom", "bar"]
+    thickness_mm: float = Field(gt=0)
+    size_mm: list[float] | None = Field(default=None, min_length=2, max_length=2)
+    quantity: int = Field(default=1, ge=1)
+    level_mm: float = Field(default=0, ge=0)
+
+    @model_validator(mode="after")
+    def _size(self) -> Self:
+        if (self.role == "gusset") != (self.size_mm is None):
+            raise ValueError("give size_mm for every bracket plate except the gusset")
+        if self.size_mm is not None and min(self.size_mm) <= 0:
+            raise ValueError("bracket plate sizes must be positive")
+        return self
+
+
+class Brackets(_Model):
+    """Brackets connecting each support stub to the top panel it belongs to."""
+
+    depth_mm: float = Field(gt=0)  # from the top (z = height) down to the bracket bottom
+    side: list[BracketPlate] = Field(min_length=1)  # brackets at the side column lines
+    corner: list[BracketPlate] = Field(min_length=1)  # brackets at the corner columns (on the end walls)
+    material: str = Field(min_length=1)
+    source: str = Field(min_length=1)
+
+
 TierPosition = Literal["bottom", "middle", "top"]
 
 
@@ -241,6 +280,8 @@ class SpacingRule(_Model):
     max_spacing_mm: float = Field(gt=0)
     bottom_clearance_mm: float = Field(ge=0)
     top_extension_mm: float
+    # Stiffeners under a side bracket stop this far below its bottom (side walls, top tier only).
+    stop_under_brackets_mm: float | None = Field(default=None, ge=0)
 
 
 class StiffeningRules(_Model):
@@ -265,6 +306,7 @@ class Stiffening(_Model):
     tier_beams: TierBeams | None = None
     top_beams: TopBeams | None = None
     supports: Supports | None = None
+    brackets: Brackets | None = None
     stiffeners: list[StiffenerLayout] = []  # explicit layouts; they override the rules
     rules: StiffeningRules | None = None
 
@@ -322,6 +364,10 @@ class HopperCase(_Model):
             if name not in self.profiles or self.profiles[name].kind != kind:
                 errors.append(f"profile {name!r} must be a {kind} in [profiles]")
         tiers = len(self.parameters.tier_heights_mm.value)
+        if st.brackets is not None and st.supports is None:
+            errors.append("brackets need supports")
+        if st.brackets is not None and st.brackets.depth_mm >= self.parameters.tier_heights_mm.value[-1]:
+            errors.append("the bracket depth must be less than the top tier height")
         if st.tier_beams is not None:
             beams = st.tier_beams
             for wall, values in (("side", beams.side_end_extensions_mm), ("end", beams.end_end_extensions_mm)):

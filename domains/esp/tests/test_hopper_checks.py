@@ -36,7 +36,14 @@ def measurements(calc: HopperCalculation) -> dict[str, Any]:
             for n, p in calc.profiles.items()
         },
         "fittings": {
-            n: {"kind": f.kind, "panel": f.panel, "size_mm": f.size_mm, "position_mm": f.position_mm, "z_mm": f.z_mm}
+            n: {
+                "kind": f.kind,
+                "panel": f.panel,
+                "size_mm": f.size_mm,
+                "position_mm": f.position_mm,
+                "z_mm": f.z_mm,
+                "volume_mm3": f.volume_mm3,
+            }
             for n, f in calc.fittings.items()
         },
         "solids_valid": True,

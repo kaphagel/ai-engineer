@@ -53,6 +53,14 @@ def _model_against_calculation(calc: HopperCalculation, m: dict[str, Any]) -> li
         ),
         _check("model.no_interference", not m["interferences"], f"interferences: {m['interferences']}", src),
         _check(
+            "model.outside_hopper",
+            not m.get("inside_hopper", []),
+            f"parts reaching inside the hopper: {m.get('inside_hopper', [])[:6]}"
+            if m.get("inside_hopper")
+            else "no part reaches more than 5 mm inside the inner plate surfaces",
+            src,
+        ),
+        _check(
             "model.panel_set",
             set(m["panels"]) == set(calc.panels),
             f"{len(m['panels'])} panels in the model, {len(calc.panels)} calculated",
@@ -140,11 +148,12 @@ def _fittings_against_calculation(calc: HopperCalculation, measured: dict[str, A
             *(abs(a - b) for a, b in zip(got["z_mm"], f.z_mm, strict=True)),
         )
         worst = max(worst, deviation)
-        if deviation > LENGTH_TOL_MM or got["panel"] != f.panel:
+        volume_ok = not f.volume_mm3 or abs(got.get("volume_mm3", 0.0) - f.volume_mm3) <= RELATIVE_TOL * f.volume_mm3
+        if deviation > LENGTH_TOL_MM or got["panel"] != f.panel or not volume_ok:
             wrong.append(f"{name}: model {got['size_mm']} at {got['position_mm']} z {got['z_mm']}")
     same = set(measured) == set(calc.fittings)
     detail = (
-        f"{len(measured)} support plates in the model, {len(calc.fittings)} calculated; "
+        f"{len(measured)} support and bracket plates in the model, {len(calc.fittings)} calculated; "
         f"largest difference {worst:.2f} mm"
     )
     return [_check("model.fittings", same and not wrong, detail + (f"; wrong: {wrong[:4]}" if wrong else ""), src)]

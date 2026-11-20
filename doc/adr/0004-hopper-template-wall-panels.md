@@ -22,7 +22,7 @@ Template `esp.hopper` 0.2.0 replaces 0.1.0 and generalizes it:
 - Every input value carries its source. Tolerances, standard notes (weld quality, execution class) and design criteria come from the design basis; the minimum valley angle stays a labelled, unapproved placeholder until the engineering owner sets it (E-02).
 - The geometry rules are pure Python (unit-tested). The platform calculates the same quantities with a separate implementation and checks the model against it.
 
-Not yet modelled: brackets between the support stubs and the top panels, bracing, corner joint plates, welds, inspection door and level studs.
+Not yet modelled: bracing, corner joint plates, welds, inspection door and level studs.
 
 ### Step 2 (template 0.3.0): tier beams and stiffeners
 
@@ -42,6 +42,19 @@ Not yet modelled: brackets between the support stubs and the top panels, bracing
 - **Top-tier stiffeners:** single stiffeners can stop a given distance below the top (they end under the support brackets in the reference).
 - **Checks:** model against the calculation for top beams, stub positions and levels, and every column and base plate (size, position, height); BOM counts and masses; the support grid dimensions on the drawing and in the PDF text. Column and base plates do not stand on a panel plate, so their overlaps with plate edges (local cut-outs in reality) are reported as connection overlaps.
 - **Not modelled:** the bracket plates and flat bars between the stubs and the top panels, the pins on the column plates, the horizontal flat bars on the top panels.
+
+### Step 4 (template 0.5.0): support brackets
+
+The issued brackets consist of about ten shaped plates each. They are modelled in a simplified, checkable arrangement:
+
+- **Plates from the input:** the bracket plates of the issued parts list (thickness, size, quantity per support), each with a role: *gusset* (on the column line between stub and wall; shape from the geometry), *back* (against the stub, in a row along the wall), *side* (at the ends of the back row), *bottom* (horizontal under the bracket), *bar* (flat bars on the outer wall face beside the bracket). Side brackets and corner brackets have separate lists; corner brackets are moved along the end wall so they stay on the plate.
+- **Cut to the wall:** every bracket plate is trimmed by the outer wall face, as the real plates are.
+- **Stiffeners under brackets:** a spacing rule can stop the side-wall stiffeners of the top tier that lie under a bracket a given distance below its bottom.
+- **New check `model.outside_hopper`:** no part may reach more than 5 mm inside the inner plate surfaces (the space for the bulk material). It found the untrimmed bracket plates and a column plate assumption. The 5 mm tolerance allows the tier beams, which are exposed to the bulk material through the panel gaps.
+- The platform calculates every bracket plate (bounding box and volume) independently; the model and BOM are checked against it.
+- The reference column plates sit on top of the top beams (the 800 mm column dimension and section H-H of the side top panel).
+
+Result on the reference case: welded top side panel −1.7 %, welded top end panel −13.5 %. The corner brackets of the delivery are arranged diagonally between the corner column and both walls; the simplified arrangement trims them too much (open item, together with the corner joint details).
 
 ### Flexibility: rules with explicit overrides
 

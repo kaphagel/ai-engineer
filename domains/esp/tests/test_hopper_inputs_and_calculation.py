@@ -73,6 +73,18 @@ def test_beams_and_stiffeners_agree_with_the_independent_worker_placement(
         fitting = calc.fittings[box.name]
         assert (box.panel, box.size) == (fitting.panel, fitting.size_mm)
         assert box.centre == pytest.approx((*fitting.position_mm, fitting.z_mm[0]))
+    slabs = hp.brackets(spec, panels, stiffening)
+    assert {s.name for s in slabs} == {n for n, f in calc.fittings.items() if f.kind == "bracket plate"}
+    for slab in slabs:
+        fitting = calc.fittings[slab.name]
+        corners = [*slab.outline, *(tuple(a + b for a, b in zip(p, slab.extrude, strict=True)) for p in slab.outline)]
+        low = [min(c[i] for c in corners) for i in range(3)]
+        high = [max(c[i] for c in corners) for i in range(3)]
+        assert slab.panel == fitting.panel, slab.name
+        assert [h - lo for lo, h in zip(low, high, strict=True)] == pytest.approx(fitting.size_mm, abs=1e-6), slab.name
+        assert ((low[0] + high[0]) / 2, (low[1] + high[1]) / 2) == pytest.approx(fitting.position_mm, abs=1e-6)
+        assert (low[2], high[2]) == pytest.approx(fitting.z_mm, abs=1e-6), slab.name
+        assert hp.slab_volume(slab) == pytest.approx(fitting.volume_mm3, rel=1e-9), slab.name
 
 
 def test_stiffening_must_use_profiles_of_the_right_kind(case: HopperCase) -> None:

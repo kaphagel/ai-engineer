@@ -10,7 +10,8 @@ approved until the engineering owner approves the rules.
 import itertools
 import math
 
-from iaiep_esp.hopper.inputs import HopperCase, SpacingRule, StiffenerLayout, Stiffening, StiffeningRules, Supports
+from iaiep_esp.hopper.calculation import HopperCalculation
+from iaiep_esp.hopper.inputs import HopperCase, SpacingRule, StiffenerLayout, StiffeningRules, Supports
 
 RULE_SOURCE_PREFIX = "rule:"
 SYMMETRY_TOL_MM = 0.5
@@ -42,8 +43,8 @@ def resolve(case: HopperCase) -> HopperCase:
     stiffeners = list(st.stiffeners)
     if st.rules is not None:
         stiffeners += _rule_layouts(case, st.rules, st.stiffeners, inner_columns)
-    resolved = Stiffening(
-        tier_beams=tier_beams, top_beams=top_beams, supports=supports, stiffeners=stiffeners, rules=st.rules
+    resolved = st.model_copy(
+        update={"tier_beams": tier_beams, "top_beams": top_beams, "supports": supports, "stiffeners": stiffeners}
     )
     return case.model_copy(update={"stiffening": resolved})
 
@@ -92,7 +93,8 @@ def _rule_layouts(
 ) -> list[StiffenerLayout]:
     from iaiep_esp.hopper.calculation import calculate  # the panel sizes; no cycle: no stiffening
 
-    panels = calculate(case.model_copy(update={"stiffening": None})).panels
+    plain = calculate(case.model_copy(update={"stiffening": None}))
+    panels = plain.panels
     tiers = len(case.parameters.tier_heights_mm.value)
     given = {(layout.wall, layout.tier) for layout in explicit}
     by_key: dict[tuple[str, str], SpacingRule] = {(r.wall, r.position): r for r in rules.spacing}
@@ -106,9 +108,37 @@ def _rule_layouts(
             # The narrowest piece of the wall in this tier (end walls may bend inside a tier).
             half = min(size.width_mm for name, size in panels.items() if name.startswith(f"{prefix}-T{tier}")) / 2
             layout = _layout(rule, tier, half, inner_columns if wall == "side" else [], rules, status)
+            if layout is not None and rule.stop_under_brackets_mm is not None and wall == "side" and tier == tiers:
+                layout = _stop_under_brackets(case, layout, rule.stop_under_brackets_mm, inner_columns, plain)
             if layout is not None:
                 layouts.append(layout)
     return layouts
+
+
+def _stop_under_brackets(
+    case: HopperCase, layout: StiffenerLayout, clearance: float, columns: list[float], plain: HopperCalculation
+) -> StiffenerLayout:
+    """Stiffeners whose position lies under a side bracket end `clearance` below the bracket bottom."""
+    st = case.stiffening
+    br = st.brackets if st else None
+    if br is None:
+        return layout
+    plates = br.side
+    back_row = sum((p.size_mm or [0.0])[0] * p.quantity for p in plates if p.role == "back")
+    side_t = max((p.thickness_mm for p in plates if p.role == "side"), default=0.0)
+    gussets = [p.thickness_mm for p in plates if p.role == "gusset"]
+    half = (back_row / 2 if back_row else (max(gussets) / 2 if gussets else 0.0)) + side_t
+    slope = math.radians(plain.side_wall_slope_deg)
+    top_gap = case.parameters.top_gap_mm.value if case.parameters.top_gap_mm else 0.0
+    edge_below_top = top_gap  # along the wall, from z = height to the plate top edge
+    # Along the wall from the plate top edge down to `clearance` below the bracket bottom.
+    down = (br.depth_mm + clearance) / math.sin(slope) - edge_below_top
+    total = sum(layout.bays_mm)
+    xs = [sum(layout.bays_mm[:i]) - total / 2 for i in range(len(layout.profiles))]
+    stops = [round(layout.top_extension_mm + down, 3) if any(abs(x - c) <= half for c in columns) else 0.0 for x in xs]
+    if not any(stops):
+        return layout
+    return layout.model_copy(update={"stops_below_top_mm": stops})
 
 
 def _layout(

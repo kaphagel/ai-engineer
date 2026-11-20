@@ -44,7 +44,7 @@ class ReferenceFitting(_Model):
     panel: str
     kind: str  # "column plate" or "base plate"
     quantity: int
-    size_mm: tuple[float, float, float]
+    size_mm: tuple[float, float, float] | None = None  # None: plates of several sizes (bracket plates)
     mass_kg: float  # total for the quantity
 
 
@@ -181,17 +181,19 @@ def _fittings(reference: Reference, result: dict[str, Any]) -> list[Difference]:
     for ref in reference.fittings:
         found = [n for n, f in measured.items() if f["panel"] == ref.panel and f["kind"] == ref.kind]
         item = f"{ref.description} ({ref.drawing})"
-        expected = f"{ref.quantity} x {'x'.join(f'{v:g}' for v in ref.size_mm)}, {ref.mass_kg:g} kg"
+        size = "x".join(f"{v:g}" for v in ref.size_mm) if ref.size_mm else "plates"
+        expected = f"{ref.quantity} {size}, {ref.mass_kg:g} kg"
         if not found:
             rows.append(Difference(item=item, reference=expected, generated="not generated", difference="-"))
             continue
         sizes = sorted({tuple(round(v, 1) for v in measured[n]["size_mm"]) for n in found})
         mass = sum(masses.get(n, 0.0) for n in found)
+        shown = " / ".join("x".join(f"{v:g}" for v in sz) for sz in sizes) if ref.size_mm else "plates"
         rows.append(
             Difference(
                 item=item,
                 reference=expected,
-                generated=f"{len(found)} x {' / '.join('x'.join(f'{v:g}' for v in sz) for sz in sizes)}, {mass:.1f} kg",
+                generated=f"{len(found)} {shown}, {mass:.1f} kg",
                 difference=f"qty {len(found) - ref.quantity:+d}; mass {mass - ref.mass_kg:+.1f} kg",
             )
         )

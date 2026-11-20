@@ -67,6 +67,7 @@ def _stiffening_job(case: HopperCase) -> dict[str, Any] | None:
         "tier_beams": st.tier_beams.model_dump(exclude={"source"}) if st.tier_beams else None,
         "top_beams": st.top_beams.model_dump(exclude={"source"}) if st.top_beams else None,
         "supports": st.supports.model_dump(exclude={"source"}) if st.supports else None,
+        "brackets": st.brackets.model_dump(exclude={"source"}) if st.brackets else None,
         "stiffeners": [layout.model_dump(exclude={"source"}) for layout in st.stiffeners],
     }
 
