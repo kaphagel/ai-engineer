@@ -1,12 +1,50 @@
 # IAIEP – Project status and handoff
 
-**Last updated:** 2026-11-19 (Phase 1, hopper template step 1 done)
+**Last updated:** 2026-11-20 (Phase 1, hopper template 0.6.0: steps 1–5 done; paused at the start of step 6)
 **Current phase:** Phase 1 – Feasibility prototype (in progress)
 **State:** The hopper pipeline runs end to end (input set → FreeCAD worker → model, drawing PDF, STEP, flat-pattern DXF, BOM → checks and report) and is tested against a real reference delivery (ADR-0004). Template steps 2 (tier beams and stiffeners) and 3 (top beams and support interface) are done, and the stiffening now follows engineering rules (with explicit overrides), so the hopper adapts to changes of size: a sweep of 12 size and shape variants passes all checks. Steps 4 (support brackets, simplified) and 5 (internal bracing) are done; next: accessories (inspection doors, level studs, covers, corner plates), then the conveyor. Testing uses the local Ollama model; the Anthropic account still has no credit.
 
 To resume, open this repository in VS Code (Dev Container) and tell the coding agent:
 
 > Read `doc/PROJECT_STATUS.md` and `doc/IAIEP_Comprehensive_Specification_v1.2.md`, then continue from "Next steps".
+
+## Where we left off (session 2026-11-20)
+
+**Paused at:** the start of **hopper step 6 (accessories)**. Nothing was started in code for step 6; the working tree is clean.
+
+**Agreed plan for the rest of the hopper** (one commit per step, each checked against the reference delivery and the 12-variant sweep):
+
+1. **Step 6 – accessories:** inspection door openings (bought-in standard door: place it and cut the opening), level indicator studs, protective covers, small corner plates. Reference part drawings in the hopper sub-delivery folder: protective covers, level stud, plates; the GA parts list gives quantities and masses. Read them first (render with pymupdf in `/tmp`, never commit).
+2. **Conveyor:** a separate template (reference conveyor drawing in the same folder; wear plates are NM400/Hardox 400).
+3. **Drawing set:** closer to the issued set (one drawing per welded panel plus the GA, sections, details, weld symbols) – the largest remaining piece, plan it as its own step.
+
+**How to check a change** (all must pass before committing):
+
+```bash
+export UV_LINK_MODE=copy
+uv sync --locked && uv run ruff check && uv run ruff format --check && uv run mypy && uv run pytest
+docker build --build-arg UID=$(id -u) -t iaiep-freecad-worker:dev workers/freecad   # after any worker change
+uv run pytest -m integration
+uv run iaiep-hopper domains/esp/examples/hopper_synthetic.toml --out out/hopper-synthetic
+uv run iaiep-hopper data/reference/esp-project/hopper_case.toml \
+    --reference data/reference/esp-project/hopper_reference.toml --out out/hopper-reference
+```
+
+Both runs currently give **77 checks, 0 failed**. The 12-variant flexibility sweep (shorter, longer, narrower, wider, taller, lower, pyramidal, 2 and 4 tiers, thicker plate, end wall bending inside a tier) was run with a temporary script; recreate it if needed (vary `parameters` of the synthetic case, resolve, calculate, run the worker, evaluate).
+
+**Working rules carried over:**
+
+- Confidential data (D-15): the real case files in `data/reference/` and drawings in `doc/drawings/` are git-ignored. Before every commit, scan the staged diff for customer names, drawing numbers, real dimensions and real profile designations; rule values derived from the delivery stay in the confidential case file.
+- Engineering values are inputs with a source; derived rules are marked "not approved" until the engineering owner approves them (E-02).
+- The platform calculates every part independently of the CAD worker and checks the model, BOM, DXF and PDF against it.
+- FreeCAD quirks are in ADR-0001 (never pump `Gui.updateGui()`; notification area disabled). The dev container uses Docker outside of Docker: pipe files into containers, do not bind-mount.
+
+**Open items waiting for people:**
+
+- Push to GitHub: several local commits are not pushed yet (`git push`).
+- Engineering owner: the questions in section 4 (joint allowances, height reference, profile standard, steel density, approval of the derived stiffener rules).
+- Product owner: the reference input documents (customer specification, meeting notes) for the AI extraction test (F-3); then decide whether Ollama runs on the laptop GPU or a secured server (the current server is open on the LAN and holds an unsuitable model).
+- Unanswered decision: accept "template = parametric definition" for Phase 1 although the FCStd file is not editable-parametric (spec §12.1)? Record it as an ADR once decided.
 
 ---
 
