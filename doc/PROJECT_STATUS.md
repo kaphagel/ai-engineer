@@ -1,12 +1,12 @@
 # IAIEP – Project status and handoff
 
-**Last updated:** 2026-11-20 (Phase 1, hopper template 0.6.0: steps 1–5 done; paused at the start of step 6)
+**Last updated:** 2026-11-23 (spec v3.0 adopted; Phase 1, hopper template 0.6.0: steps 1–5 done; paused at the start of step 6)
 **Current phase:** Phase 1 – Feasibility prototype (in progress)
 **State:** The hopper pipeline runs end to end (input set → FreeCAD worker → model, drawing PDF, STEP, flat-pattern DXF, BOM → checks and report) and is tested against a real reference delivery (ADR-0004). Template steps 2 (tier beams and stiffeners) and 3 (top beams and support interface) are done, and the stiffening now follows engineering rules (with explicit overrides), so the hopper adapts to changes of size: a sweep of 12 size and shape variants passes all checks. Steps 4 (support brackets, simplified) and 5 (internal bracing) are done; next: accessories (inspection doors, level studs, covers, corner plates), then the conveyor. Testing uses the local Ollama model; the Anthropic account still has no credit.
 
 To resume, open this repository in VS Code (Dev Container) and tell the coding agent:
 
-> Read `doc/PROJECT_STATUS.md` and `doc/IAIEP_Comprehensive_Specification_v1.2.md`, then continue from "Next steps".
+> Read `doc/PROJECT_STATUS.md` and `doc/IAIEP_Comprehensive_Specification_v3.0.md`, then continue from "Next steps".
 
 ## Where we left off (session 2026-11-20)
 
@@ -45,6 +45,7 @@ Both runs currently give **77 checks, 0 failed**. The 12-variant flexibility swe
 - Engineering owner: the questions in section 4 (joint allowances, height reference, profile standard, steel density, approval of the derived stiffener rules).
 - Product owner: the reference input documents (customer specification, meeting notes) for the AI extraction test (F-3); then decide whether Ollama runs on the laptop GPU or a secured server (the current server is open on the LAN and holds an unsuitable model).
 - Unanswered decision: accept "template = parametric definition" for Phase 1 although the FCStd file is not editable-parametric (spec §12.1)? Record it as an ADR once decided.
+- Unanswered decision (spec v2.0/v3.0): how the existing hopper template (`esp.hopper` 0.6.0, hopper-specific code) relates to the knowledge-driven approach – an optional accelerator (§12.3, §12.4) or the seed of the general geometric capability layer – and how GE-04 ("no new hopper-specific code", §25) will be met. Record it as an ADR before step 6 continues.
 
 ---
 
@@ -52,7 +53,8 @@ Both runs currently give **77 checks, 0 failed**. The 12-variant flexibility swe
 
 | Document | Purpose |
 |:---|:---|
-| [IAIEP_Comprehensive_Specification_v1.2.md](IAIEP_Comprehensive_Specification_v1.2.md) | The specification. Single source of architectural intent. |
+| [IAIEP_Comprehensive_Specification_v3.0.md](IAIEP_Comprehensive_Specification_v3.0.md) | The specification. Single source of architectural intent (v3.0: governed AI skill layer, §6.8 and Appendix B). |
+| Earlier specification versions | v1.2 is in git history (removed from `doc/` on 2026-11-23); v1.1 is in `archive/`. The history sections of this status file refer to v1.2. |
 | [adr/0001-freecad-headless-execution.md](adr/0001-freecad-headless-execution.md) | FreeCAD spike results and decisions. |
 | [adr/0002-llm-tool-calling.md](adr/0002-llm-tool-calling.md) | AI tool-calling spike results and decisions. |
 | [adr/0003-repository-conventions.md](adr/0003-repository-conventions.md) | Layout, tooling, coding, testing and schema conventions. |
@@ -146,12 +148,22 @@ uv run iaiep-hopper data/reference/esp-project/hopper_case.toml \
 
 ## 3. Next steps
 
+### Roadmap (agreed 2026-11-23, spec §25)
+
+1. **Prove the engineering process with a real hopper** (Phase 1: F-1, F-2, F-5, F-6, GE-01 to GE-08). First the template ADR (see "Where we left off"), then only the hopper scope that F-1, F-2 and F-5 need.
+2. **Prove the requirement-analysis skill** (Phase 1: F-3), in parallel with 1, as soon as the pre-design input documents arrive.
+3. **Go/no-go decision** on F-1 to F-7, recorded in an ADR. Nothing below starts before it.
+4. **Walking skeleton with the minimal skill registry and controlled execution** (Phase 2): tasks and executions in PostgreSQL, the hopper pipeline wrapped as tasks, the draft skill registered as the first skill.
+5. **Engineering information model, CAD service, independent verification and a human gate** (Phases 4–6).
+6. **Second equipment domain** (§24.4, Phase 8): a component that differs from a hopper (for example a tube sheet), chosen by the engineering owner.
+
 ### Phase 1 (developer / coding agent)
 
-1. **Step 6:** inspection door openings, level studs, protective covers; then the conveyor template and a drawing set closer to the reference (sections, details).
-2. Document extraction and AI extraction (Ollama) of the hopper input set, once the reference input documents are available (F-3).
-3. Store runs, inputs and check results in PostgreSQL with internal versions (spec §25 Phase 1).
-4. Repeatability measurement (F-6) and the remaining F-criteria.
+1. ADR: how the hopper template relates to the general geometric capability layer, and how GE-04 will be met.
+2. **Step 6**, limited to what F-1, F-2 and F-5 need: inspection door openings, level studs, protective covers; then the conveyor template and a drawing set closer to the reference (sections, details).
+3. Document extraction and AI extraction (Ollama) of the hopper input set, once the reference input documents are available (F-3). Write the extraction procedure as a draft `engineering.requirement-analysis` skill package (`skills/engineering/requirement-analysis/`, spec §6.8.8, Appendix B); confidential evaluation cases go in the git-ignored `data/evaluation/`.
+4. Store runs, inputs and check results in PostgreSQL with internal versions (spec §25 Phase 1).
+5. GE-01 to GE-08, repeatability measurement (F-6) and the remaining F-criteria; then the go/no-go ADR.
 
 Optional, when the Anthropic account has credit: rerun `spikes/llm-tool-calling` against Claude (synthetic data only) and update ADR-0002 and X-02.
 

@@ -22,3 +22,4 @@ out/
 # Confidential company reference data (spec D-15): never commit
 doc/drawings/
 data/reference/
+data/evaluation/

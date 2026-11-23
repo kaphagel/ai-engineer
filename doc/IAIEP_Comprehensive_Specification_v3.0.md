@@ -3,9 +3,9 @@
 ## Comprehensive Architecture and Implementation Specification for an AI Coding Agent
 
 **Document type:** Product, architecture and implementation specification\
-**Version:** 1.2\
-**Date:** 18 November 2026\
-**Status:** Architectural baseline for implementation planning\
+**Version:** 3.0\
+**Date:** 23 November 2026\
+**Status:** Revised architectural baseline — governed, versioned AI skills and knowledge-driven generative engineering\
 **Audience:** AI coding agents, software architects, engineering-domain specialists and project stakeholders
 
 ---
@@ -14,10 +14,30 @@
 
 | Version | Date | Summary |
 |:---|:---|:---|
-| 1.1 | 18 Nov 2026 | Architectural baseline. |
-| 1.2 | 18 Nov 2026 | Review update. See the change list below. |
+| 1.1 | 18 Nov 2026 | Initial architectural baseline. |
+| 1.2 | 18 Nov 2026 | Review update; detailed change list below. Superseded specification versions are not kept in the repository; they remain available in git history. |
+| 2.0 | 21 Nov 2026 | Reframed engineering architecture as knowledge-driven generative engineering. Replaced mandatory template-based design with an Engineering Design Model, declarative knowledge/rules, validated analysis services, general geometric capabilities, optional reuse and iterative design synthesis. Retained the platform organization, governance, traceability, CAD boundary, security and implementation foundations. |
+| 3.0 | 23 Nov 2026 | Introduced a governed AI Skill Layer: reusable, independently versioned procedural capabilities; skill contracts and manifests; skill registry and lifecycle; controlled execution, permissions and dependency resolution; separation of skills from engineering knowledge/domain packages; skill evaluation and regression testing; execution provenance and reproducibility; initial skill catalogue, repository structure and phased implementation. Clarified that skills improve procedural consistency but do not make probabilistic model output deterministic or replace approved engineering rules, calculation services, CAD operations, workflow gates or human authority. |
 
-Changes in 1.2:
+Changes in the 3.0 review (23 Nov 2026):
+
+- Aligned skill packages with the public Agent Skills format: `skill_id` naming, ID-to-directory mapping and the `SKILL.md` frontmatter (§6.8.3).
+- Defined the boundary between a skill procedure (inside one agent execution) and the workflow (across agents, tasks and gates) (§6.8.2).
+- Controlled work selects skills deterministically by task type; model-driven discovery is advisory only (§6.8.4).
+- A skill whose required permissions are not granted is refused at resolution instead of running with reduced permissions (§6.8.4).
+- Defined a canonical package hash and a CI check that keeps published versions immutable (§6.8.3, §6.8.6).
+- Version classes follow contract changes; any procedure change requires a new version and a re-run of the evaluation suite (§6.8.6).
+- Defined skill review and approval while one person holds all human roles (§6.8.6).
+- Confidential evaluation cases are kept outside the committed package; evaluation runs have a cost budget (§6.8.7, §21.3).
+- Bundled skill scripts are not executed until the sandbox exists (§6.8.3).
+- Skill execution records are child records of the agent execution and refer to, rather than copy, model and tool records (§6.8.10).
+- One shared permission and tool vocabulary (§6.8.3, Appendix B).
+- Aligned the skill priorities with the phase plan, added a draft requirement-analysis skill to Phase 1, moved the minimal skill registry and controlled execution into the Phase 2 walking skeleton, and assigned the Appendix B.5 acceptance criteria to phases (§6.8.8, §25, B.5).
+- Phase 1: hopper proof and extraction may run in parallel; GE-01 to GE-08 results and the go/no-go ADR are exit criteria, and Phase 2 waits for the decision; an ADR is required where the prototype starts from a component-specific template (§25).
+- Corrected the repository layout for skills, the registry and evaluations (§28).
+- Editorial: §10.6 moved before §10.7; drawing status marking made consistent ("NOT FOR FABRICATION"); decision register is §30 itself (ADR-0003), not `doc/open-decisions.md`.
+
+Changes in 1.2 (historical; section references are to v1.2 — for example, v2.0 replaced the "template-first" rule with knowledge-driven design synthesis):
 
 - Converted the document to GitHub-flavored Markdown (proper lists and tables). Wording of v1.1 content is unchanged except where noted.
 - Added §1.1 project context and constraints (solo developer, internal use, single-tenant, no fixed deadline, existing dev container).
@@ -52,7 +72,7 @@ This document defines the intended architecture, principles, functional requirem
 
 IAIEP is a decentralized, multi-agent virtual engineering company. It is intended to support industrial equipment engineering from initial requirements through process design, mechanical design, calculations, parametric CAD, verification, documentation and controlled engineering release.
 
-The first implementation focus is electrostatic precipitators (ESPs). The platform must, however, be designed so that additional equipment families can be introduced without redesigning the core platform.
+The first implementation focus is electrostatic precipitators (ESPs). The platform must, however, be designed so that additional equipment families can be introduced without redesigning the core platform. Engineering solutions must be derived from project requirements, approved engineering knowledge, calculations, constraints and geometric capabilities. The platform must not be limited to selecting and parameterizing a predefined catalogue of finished component templates.
 
 The platform is not simply a chatbot, a single autonomous agent, or a CAD automation script. It is a persistent engineering environment in which multiple specialist agents operate as members of departments, collaborate across temporary project teams, exchange controlled engineering information, use engineering tools, and produce traceable deliverables.
 
@@ -180,7 +200,7 @@ No core function may depend permanently on one AI provider.
 - **Blender** is used for visualization, presentation, rendering and communication.
 - CAD source models and engineering drawings must remain editable and traceable.
 - STEP/AP242 and DXF may be used for exchange, but they do not replace native source models.
-- **Baseline version:** FreeCAD 1.1.x (latest stable at the time of writing: 1.1.4, September 2026). One exact version is pinned per deployment and recorded with every CAD output. Upgrading the pinned version is a controlled change: CAD regression tests (§21.3) must pass before upgrading, because model recomputation can change between versions.
+- **Baseline version:** FreeCAD 1.1.x (latest stable at the time of writing: 1.1.4, September 2026). One exact version is pinned per deployment and recorded with every CAD output. Upgrading the pinned version is a controlled change: CAD regression tests (§21.4) must pass before upgrading, because model recomputation can change between versions.
 - Engineering drawings are produced with the FreeCAD **TechDraw** workbench (see §12.7).
 
 # 4. Scope and equipment domains
@@ -217,7 +237,7 @@ The core platform must be extensible to:
 - Other flue-gas-cleaning equipment.
 - Integrated flue-gas-cleaning plants and complete installations.
 
-Each equipment domain is a separately versioned package containing domain-specific data models, specialist roles, knowledge, calculation services, component libraries, design workflows, validation rules and deliverable templates.
+Each equipment domain is a separately versioned package containing domain-specific engineering knowledge, data models, methods, calculation services, constraints, geometric capabilities or feature definitions, optional reusable design patterns, validation rules, workflows and deliverable definitions. A domain package describes how to engineer a class of equipment; it must not require every possible equipment configuration to exist as a pre-coded component.
 
 ## 4.3 Equipment-independent core
 
@@ -229,14 +249,15 @@ Domain-specific functionality must be provided through explicit extension points
 - Equipment taxonomy and component types.
 - Domain-specific engineering schemas.
 - Calculation service registrations.
-- CAD component and assembly definitions.
+- General geometric capability registrations and CAD feature mappings.
+- Optional reusable component, assembly and design-pattern definitions.
 - Validation rules.
 - Workflow templates.
 - Knowledge collections and source policies.
 - Deliverable templates.
 - Domain-specific agent competencies.
 
-A new equipment family should be addable without changing the identity, messaging, task, project, document, revision or approval subsystems.
+A new equipment family should be addable without changing the identity, messaging, task, project, document, revision or approval subsystems. Its engineering behaviour must be supplied through versioned domain knowledge, schemas, methods, constraints and capabilities. The core must not encode equipment-specific sizing equations or geometry assumptions.
 
 # 5. Organizational model
 
@@ -449,7 +470,215 @@ A logical agent becomes active only when there is work for it. The runtime must 
 
 **Concurrency.** An agent may run several executions at the same time, on different tasks, up to a configurable per-agent limit. The default limit is 1 during Phases 1–2. Executions of the same agent share its persistent working state only through explicit, versioned updates, never through implicit shared memory.
 
-Agent instructions (system prompts, role definitions, procedure texts) are versioned configuration. The version used is recorded with every execution, so that a change in agent behavior can be traced to a change in its instructions, model or inputs.
+Agent instructions (system prompts and role definitions) are versioned configuration. The version used is recorded with every execution, so that a change in agent behavior can be traced to a change in its instructions, model or inputs. Reusable task procedures are maintained separately as AI skills (§6.8). An agent may be assigned multiple skills, and the same skill may be used by multiple agents. Skills do not become part of an agent's identity and must not be copied into agent-specific prompts as uncontrolled duplicates.
+
+## 6.8 Governed AI Skill Layer
+
+### 6.8.1 Purpose and definition
+
+IAIEP must provide a reusable **AI Skill Layer** for packaging procedural capabilities that agents can discover and invoke when performing defined engineering or platform activities.
+
+An **AI skill** is a versioned, governed package that describes how an agent should approach a bounded task: when to use the capability, what inputs are required, which steps and decision points to follow, which tools or services may be invoked, what outputs must be produced, how results are checked, and when to stop or escalate.
+
+Examples include requirement analysis, design-basis preparation, ESP hopper design, FreeCAD parametric modelling, TechDraw drawing generation and independent engineering verification.
+
+A skill is not:
+- A separate autonomous agent or a replacement for agent identity and responsibility.
+- A general system prompt copied into every agent.
+- An authoritative engineering standard, rule, calculation or source document.
+- A substitute for deterministic calculation services, CAD services, workflow orchestration or verification.
+- A guarantee that an LLM will produce identical results on every run.
+
+Skills guide probabilistic reasoning and structure tool use. Repeatability and engineering determinism must be supplied by validated schemas, controlled data, deterministic services, explicit operation plans, version pinning, automated checks and approval gates.
+
+### 6.8.2 Architectural separation
+
+Keep the following concepts separate and link them by stable IDs and versions:
+
+| Concept | Owns | Must not become |
+|:---|:---|:---|
+| Agent definition | Identity, role, responsibility, competency, autonomy and permissions | A repository of duplicated task procedures |
+| AI skill | Reusable procedure, task workflow, tool-use guidance, input/output contract and escalation rules | An engineering authority or a hidden source of design criteria |
+| Engineering knowledge | Approved source material, methods, standards and technical guidance | Unreviewed executable logic |
+| Engineering rule package | Machine-readable constraints, equations, applicability and authority | Free-form instructions interpreted differently on each run |
+| Domain package | Domain schemas, engineering knowledge references, rules, calculation definitions, validation cases and domain metadata | Agent-specific prompt content |
+| Calculation/analysis service | Validated numerical execution and result evidence | LLM-generated numerical authority |
+| CAD capability/service | Validated geometric operations and controlled CAD execution | Unrestricted generated code |
+| Workflow engine | Task sequencing, dependencies, state transitions and gates | A procedure hidden inside a prompt |
+| Verification capability | Independent checks and findings | Approval or release authority reserved to humans |
+
+A skill may reference one or more domain packages, schemas, rules, calculation services, CAD capabilities and other skills. Those dependencies must be explicit and version-constrained where compatibility matters. A skill may explain how to select an approved engineering method, but the method and its authority remain owned by the engineering knowledge/rule/calculation layer.
+
+**Skill procedure versus workflow.** A skill's procedure covers the work done inside one agent execution on one task: the steps, tool calls, checks and stop conditions of that execution. Anything that spans several agents, tasks, reviews or gates (for example "derive the EDM, then generate CAD, then verify independently, then obtain approval") is a workflow (§9, Phase 5) and is defined in the workflow engine, not in a skill. A skill such as `esp.hopper-design` therefore performs the design-synthesis work of one task and hands off to the next task through structured outputs; it does not sequence other agents' tasks or pass gates.
+
+### 6.8.3 Skill package contract
+
+Each skill must be a self-contained, discoverable package with a stable identifier and immutable version. The minimum package contract is:
+
+- `skill_id`: stable machine-readable identifier, independent of display name.
+- `name` and `description`: human-readable purpose.
+- `version`: immutable semantic version (`MAJOR.MINOR.PATCH`).
+- `status`: lifecycle state (§6.8.6).
+- `owner`: responsible department or named owner role.
+- `scope`: intended task, applicable domains and exclusions.
+- `triggers`: conditions that make the skill relevant.
+- `inputs`: required and optional inputs, schemas, units, provenance requirements and preconditions.
+- `outputs`: required output artifacts, schemas, status and quality criteria.
+- `procedure`: ordered steps, decision points, stop conditions and escalation behavior.
+- `tools`: permitted tool/service identifiers and required operations.
+- `dependencies`: compatible skill, schema, domain-package, rule, calculation and tool versions.
+- `permissions`: minimum required permissions and prohibited actions.
+- `verification`: checks to run and evidence to retain.
+- `tests`: evaluation cases, regression cases and expected invariants.
+- `limitations`: known limitations, assumptions and unsupported cases.
+- `change history`: author, reviewer, approval, effective date and change summary.
+
+The human-readable procedure should use a portable Markdown `SKILL.md` as its primary entry point. Machine-readable metadata must be provided in a manifest (for example `manifest.yaml`) and structured schemas must be stored alongside it. The platform may adopt the open Agent Skills directory convention as a packaging starting point, but IAIEP-specific metadata, permissions, versioning, lifecycle, validation and execution controls are mandatory. The platform must not assume that a third-party skill package is safe or approved merely because it follows a public format.
+
+**Identifiers and the Agent Skills format.** To stay compatible with the public Agent Skills format (which allows only lowercase letters, digits and single hyphens in a skill name, and requires the name to match the directory name):
+
+- `skill_id` has the form `<namespace>.<name>`, where both parts use only `a-z`, `0-9` and single hyphens (for example `engineering.requirement-analysis`, `esp.hopper-design`). The namespace is a discipline (`engineering`, `cad`) or a domain package ID (`esp`).
+- The package directory is `skills/<namespace>/<name>/` (§28).
+- The `SKILL.md` frontmatter contains `name: <name>` (equal to the directory name) and `description`, as the public format requires. `<name>` must be unique across all namespaces in the registry, so that a package remains usable by generic Agent Skills clients.
+- `name` and `description` are kept only in the `SKILL.md` frontmatter; `manifest.yaml` holds the `skill_id`, `display_name` and all other metadata, and does not repeat them. Package validation checks that frontmatter, directory and `skill_id` agree.
+
+**Package hash.** The package hash is a SHA-256 over a canonical form of the package: all files except those excluded below, sorted by their relative POSIX path, each contributing its path and its content with line endings normalized to LF. `CHANGELOG.md`, `README.md` and local caches are excluded. The registry records this hash for each published version, and the loader recomputes it before use; a mismatch blocks execution (§6.8.6).
+
+**Permission and tool vocabulary.** Tool identifiers and permission identifiers in manifests come from one platform-maintained vocabulary (the same identifiers used by server-side authorization, §16), in the form `<resource>.<action>` (for example `artifact.create_draft`, `project.read`). Package validation rejects identifiers that are not in the vocabulary.
+
+**Bundled scripts.** A package may contain a `scripts/` directory only for reviewed helper code. Until the sandbox for generated and helper code exists (§12.3, §27.4), the runtime does not execute scripts from skill packages; skills act only through registered tools and services.
+
+### 6.8.4 Skill execution
+
+The runtime must support this controlled lifecycle:
+
+1. Resolve the requested skill by `skill_id` and an explicit version or approved version-selection policy.
+2. Check that the skill is approved, active, compatible with the agent, task, project, domain package and runtime.
+3. Resolve and pin all required dependencies.
+4. Validate the input contract, source artifact revisions, units, permissions and preconditions.
+5. Provide the agent with the skill instructions and only the authorized tools and data.
+6. Execute the procedure while recording relevant decisions, tool calls, service executions and outputs.
+7. Validate output schemas and required evidence.
+8. Run the skill's required verification steps or delegate independent verification.
+9. Store the output artifacts and a skill-execution record.
+10. Complete, block or escalate the task according to the skill's stop conditions and the workflow's gates.
+
+A skill must not grant permissions by itself. The runtime authorizes every operation using the intersection of agent permissions, user/project permissions, task scope, skill-declared requirements and server-side policy. If the intersection does not contain every permission the skill declares as required, the runtime refuses the skill at resolution (step 2), before execution starts, and records the reason; it does not run the skill with a reduced permission set that could fail part-way. The skill must not elevate privilege.
+
+**Skill selection.** For controlled work, the runtime selects the skill deterministically: each task type is bound to an exact skill version (or a version-selection policy resolved when the task is created) in the workflow or task definition. The model does not choose which skill governs a controlled task. Discovery by task description or capability metadata, including semantic retrieval, is used only for advisory work and for suggesting bindings to a human; the result must be confirmed against structured metadata, compatibility and permissions. Semantic similarity alone is not authorization to execute.
+
+A skill may call another skill only through an explicit dependency or delegated task contract. A nested skill invocation creates its own skill-execution record that refers to the invoking one (§6.8.10). Prevent uncontrolled recursive skill invocation, circular dependencies and unbounded agent-to-agent delegation. Maximum nesting depth (default 2), iteration and resource budgets are part of the runtime configuration and count against the task budget (D-17).
+
+### 6.8.5 Repeatability and deterministic boundaries
+
+The platform must distinguish three levels:
+
+- **Procedural repeatability:** the same approved skill version presents the same required workflow, contracts, checks and stop conditions.
+- **Execution reproducibility:** the platform can reconstruct which skill, dependencies, instructions, model, inputs, tools and versions were used, and replay deterministic portions of the work.
+- **Output determinism:** identical inputs produce identical outputs. This can be required for deterministic services and validated operations, but must not be assumed for LLM-generated text or design proposals.
+
+Where a skill invokes deterministic services, their exact versions and inputs must be recorded. Where a skill asks an LLM to interpret, plan or recommend, the result remains probabilistic. The skill must require structured outputs, validation, explicit uncertainty and escalation where appropriate. Do not claim full determinism merely because a skill was used.
+
+For engineering-critical operations, the skill must hand off numerical work to approved calculation services and geometry work to validated CAD operations. It must not ask the model to fabricate numerical answers or silently invent CAD parameters. Any generated operation plan must pass schema, permission, constraint and geometry validation before it can affect a controlled artifact.
+
+### 6.8.6 Skill governance and lifecycle
+
+Skills have controlled lifecycle states:
+
+- `draft`: under development; not available for controlled engineering work.
+- `tested`: automated and evaluation tests have passed; awaiting review/approval.
+- `reviewed`: technical review completed; awaiting formal approval where required.
+- `approved`: permitted for use within its declared scope and permissions.
+- `deprecated`: remains identifiable for historical runs but must not be selected for new work unless explicitly permitted.
+- `withdrawn`: prohibited for new execution; retained for audit and historical reconstruction.
+
+Approval authority depends on skill risk. Platform/process skills may be approved by the responsible software owner. Engineering skills that affect engineering decisions or deliverables require review and approval by the relevant qualified engineering owner. Skill approval does not approve the engineering methods or rules referenced by the skill; those remain separately governed.
+
+**Review and approval with one person in all roles (§1.1, §3.3).** Skill packages are usually written by the coding agent. The coding agent is the author and can never review or approve. While the product owner holds all software roles, `tested` → `reviewed` → `approved` for a platform/process skill may be a single recorded decision by the product owner, provided the test evidence is attached; the record must still state the role used. A skill written by the product owner personally must not be approved by the product owner alone: it needs a review by the engineering owner (for engineering skills, this review is required anyway) or stays `tested`.
+
+Published versions are immutable. Version classes follow observable contracts, because the effect of a wording change on model behavior cannot be classified by reading it:
+
+- **Major:** a change to the input or output schemas, required permissions, dependency ranges, stop conditions or anything else that makes existing callers or bindings incompatible.
+- **Minor:** a backward-compatible addition to contracts or capabilities.
+- **Patch:** any other change to the package content, including any change to the `SKILL.md` procedure text.
+
+Every new version, whatever its class, must pass the full evaluation suite (§6.8.7) before promotion; a patch is not exempt because it looks editorial. If classification is uncertain, use a major version and document the migration.
+
+Immutability is enforced, not assumed: CI recomputes the package hash (§6.8.3) of every version registered as published and fails if the content of a published version has changed without a new version. Historical package versions are retrievable from the registry (from git tags or controlled object storage), not only from the current working tree.
+
+Existing tasks and historical records must remain pinned to the exact skill version used. Updating a registry's recommended version must not silently change an in-progress task or rewrite prior execution records. A `deprecated` or `withdrawn` version that an in-progress task is pinned to is reported to the task owner; the task continues with that version only if the withdrawal record permits it, otherwise it is blocked for a decision.
+
+### 6.8.7 Skill evaluation and maintenance
+
+Every skill intended for production or controlled engineering use must have:
+- Positive test cases for normal supported use.
+- Negative tests for missing, conflicting, malformed or out-of-scope inputs.
+- Permission and prompt-injection tests where tools or retrieved content are involved.
+- Output-schema and invariant checks.
+- Regression cases for previously corrected failures.
+- Evaluation criteria for model-dependent behavior, including acceptable ranges and mandatory stop/escalation behavior.
+- A documented test environment and pinned dependencies.
+
+A skill must not be promoted to `approved` solely because its instructions look complete or because a small number of demonstrations succeeded. Test results, reviewer identity, approval state and the exact package hash must be recorded.
+
+**Confidential evaluation cases.** Evaluation cases derived from company or customer data are `confidential` (D-15) and must not be committed. They are stored in the git-ignored `data/evaluation/` area (§28), addressed by case ID and SHA-256, and run only with model routes approved for their classification (D-16). They are not part of the package and not part of the package hash; the package's `tests/` directory contains only synthetic or non-confidential cases. The evaluation report records the IDs and hashes of the confidential cases used, so that a result can be traced without exposing the data.
+
+**Evaluation cost.** Each evaluation run of a model-dependent skill has a cost and token budget, recorded with the result and counted against the development budget (D-17). Deterministic parts of a skill (schema checks, permission checks, tool contracts, invariants) are tested in CI with recorded or stubbed model responses; live model evaluation runs on promotion and on requalification (§21.3), not on every commit.
+
+Monitor skill-level outcomes: completion rate, blocked/escalated rate, schema failures, tool errors, verification findings, human corrections, rework, cost and execution duration. A material regression must trigger review, rollback of the recommended version and/or withdrawal. Do not silently edit an approved skill in place.
+
+### 6.8.8 Initial skill catalogue
+
+Start with a small set that proves the architecture rather than creating a large catalogue prematurely:
+
+| Skill ID | Purpose | Primary users | Key boundary |
+|:---|:---|:---|:---|
+| `engineering.requirement-analysis` | Extract, classify and reconcile requirements and source data into structured artifacts | Requirements/process agents | Must cite sources and flag missing/conflicting values; cannot invent inputs |
+| `engineering.design-basis` | Prepare a traceable design basis and open-issues register | Process/mechanical agents | Approval remains a human gate |
+| `esp.hopper-design` | Perform hopper design synthesis within one task: derive a candidate EDM and geometric operation plan from approved inputs, rules and calculation results | ESP mechanical agent | Must not embed unapproved hopper criteria or bypass calculations; does not sequence other tasks or gates (§6.8.2) |
+| `cad.freecad-parametric-modelling` | Convert an approved EDM/operation plan into controlled parametric CAD operations | CAD agent | Uses only authorized CAD service operations |
+| `cad.techdraw-generation` | Produce drawing pages, views, dimensions, title blocks and exports | CAD/documentation agent | Must use controlled metadata and drawing checks |
+| `engineering.verification` | Independently verify artifacts against requirements, rules and evidence | Verification agent | Must be independent from authorship; cannot approve or release |
+| `engineering.change-impact-analysis` | Trace changes through EDM dependencies and affected deliverables | Engineering/change agent | Reports impact; does not silently accept changes |
+
+Skills are introduced in the order of the phase plan (§25):
+
+| Phase | Skill work |
+|:---|:---|
+| 1 | `engineering.requirement-analysis` as a **draft** package (`SKILL.md`, `manifest.yaml`, schemas), used directly by the F-3 extraction step and evaluated on the reference cases. No registry or runtime is built; the package and its evaluation results seed the later registered version |
+| 2 | Minimal registry, loader, hashing, permission intersection and execution records in the walking skeleton; the Phase 1 draft becomes the first registered skill |
+| 3 | Lifecycle enforcement, dependency resolution, compatibility checks and historical versions |
+| 5 | Evaluation runner and lifecycle approvals; `engineering.requirement-analysis` and `engineering.verification` promoted through the lifecycle. `engineering.verification` must be approved before the platform is relied on for consequential engineering outputs |
+| 6 | `cad.freecad-parametric-modelling` and `cad.techdraw-generation`, bound to validated CAD service operations |
+| 8 | `esp.hopper-design` with approved ESP domain-package versions; `engineering.design-basis` and `engineering.change-impact-analysis` when their workflows exist |
+
+### 6.8.9 Skill registry and discovery
+
+The platform must maintain a registry of skills and versions, including metadata, package hash, lifecycle state, owner, scope, dependencies, permissions, test status and approval record. The registry must support:
+- Lookup by exact ID/version.
+- Discovery by capability, domain, task type and tags.
+- Compatibility checks.
+- Deprecation and withdrawal.
+- Dependency resolution.
+- Access-controlled package retrieval.
+- Search results that distinguish approved from draft or withdrawn content.
+
+For the initial modular-monolith implementation, the registry is a database-backed module (`src/iaiep/skills/`, §28) and packages are stored in the repository (`skills/`) or controlled object storage. Do not introduce a separate microservice solely for skills until scale or deployment isolation requires it.
+
+### 6.8.10 Skill execution record
+
+Each skill invocation must create an immutable execution record. It is a child of the agent execution (§6.7) that ran it and refers to records that already exist elsewhere instead of copying them. It contains, at minimum:
+- `skill_execution_id`, `skill_id`, exact semantic version and package SHA-256.
+- `execution_id` of the agent execution (from which `agent_id`, `task_id`, `project_id`, invoking user/role and agent-definition/instruction version are obtained), and `parent_skill_execution_id` for a nested invocation.
+- Input artifact IDs and exact revisions, validated input payload or immutable reference, and source provenance.
+- Skill manifest/schema versions and all resolved dependency IDs/versions/hashes.
+- References to the model-interaction records (§19.2) and tool-call records (§6.7) made under this skill, which hold the model provider/identifier/version, generation settings, tool/service identifiers and versions, calls, results and errors.
+- Calculation and CAD operation-plan references and execution versions.
+- Output artifact IDs/revisions and validation results.
+- Start/end timestamps, resource usage, budget consumption and stop reason.
+- Reviewer, approval state and linked findings where applicable.
+
+The execution record must be linked to the task and to every controlled artifact produced or modified by the skill. Retention follows the artifact and audit policy (§19, §20 and §30).
 
 # 7. Decentralized communication and coordination
 
@@ -806,69 +1035,181 @@ Prefer:
 - CSV/XLSX only where suitable and controlled.
 - Original source files retained alongside extracted or converted data.
 
-# 11. Engineering calculations and deterministic services
+## 10.7 Engineering Design Model (EDM)
 
-## 11.1 Separation of AI reasoning and calculation
+The platform must introduce an **Engineering Design Model (EDM)** as the authoritative structured representation of the proposed engineering solution before and alongside CAD. The EDM is not a CAD file, a fixed component template or a copy of a drawing. It is the engineering-level model that expresses what the equipment is, why its configuration and dimensions were selected, how its parts relate, and which constraints and interfaces must remain satisfied.
 
-AI agents may:
+The EDM is the bridge between requirements and generated deliverables. CAD geometry, drawings, BOMs, manufacturing data and verification plans are derived from the EDM and its approved input artifacts. CAD is authoritative for detailed geometric representation; the EDM is authoritative for the engineering intent, configuration, parameter relationships and design provenance.
 
-- Determine which calculation is required.
-- Gather and validate input data.
-- Select an approved calculation service.
-- Explain assumptions and results.
-- Interpret results within the service’s stated validity limits.
-- Prepare reports and request independent checking.
+The EDM must be domain-extensible and schema-versioned. It should represent, as applicable:
 
-AI agents must not invent numerical engineering results or silently substitute language-model estimates for validated calculations.
+- Project, plant, system and equipment hierarchy.
+- Equipment purpose, operating cases and design conditions.
+- Selected equipment configuration and arrangement.
+- Subsystems, parts, assemblies and their functional roles.
+- Engineering parameters with quantity type, value, unit, status and provenance.
+- Derived parameters and the equations/rules/calculations that derive them.
+- Geometric parameters, coordinate systems, datums and spatial relationships.
+- Interfaces, connection points, mating conditions and boundary conditions.
+- Materials, thicknesses, loads and manufacturing constraints.
+- Design alternatives and the reasons for selecting or rejecting them.
+- Assumptions, unresolved questions, risks and engineering decisions.
+- Constraints, validation results and verification obligations.
+- Links to calculations, knowledge sources, CAD features, drawings, BOM items and other artifacts.
 
-Numerical calculations that affect design must be performed by deterministic, versioned and tested services or approved engineering software.
+Every parameter must be classified, at minimum, as one of:
 
-## 11.2 Calculation service contract
+- `specified`: explicitly stated by an authoritative source or approved requirement.
+- `derived`: calculated from other values by an identified approved method.
+- `selected`: chosen by an agent or engineer within documented constraints and with a recorded rationale.
+- `assumed`: provisional and explicitly recorded; never silently promoted to a fact.
+- `unknown`: required or potentially relevant but not yet established.
+- `not_applicable`: explicitly determined not to apply, with rationale where material.
 
-Each calculation service must define:
+The EDM must distinguish input values from derived values and must preserve the full dependency chain. It must never overwrite a specified value with a derived or selected value. Conflicts between sources must be represented and resolved through the project's authority and approval rules.
+
+The EDM must support multiple candidate configurations and revisions. A candidate design can be incomplete or preliminary; it becomes eligible for a design gate only when its required inputs, calculations, constraints and verification evidence meet that gate's entry criteria.
+
+### 10.7.1 Parameter relationships and dependency graph
+
+The EDM must represent relationships rather than only storing independent numbers. Examples include:
+
+- Electrode count and arrangement influencing active length, collecting area and field configuration.
+- Electrode spacing and alignment influencing electrical configuration and clearances.
+- Process flow and gas properties influencing velocity, residence time and required process configuration through approved methods.
+- Casing dimensions being derived from internal arrangement, clearances, insulation, access and structural requirements.
+- Hopper geometry being related to casing interfaces, outlet dimensions, wall geometry, volume and approved dust-handling criteria.
+- Structural member sizing being related to loads, spans, support conditions and approved structural methods.
+
+These are relationship examples, not prescribed ESP design equations. The engineering owner must approve the actual methods and criteria.
+
+Represent dependencies as a typed directed graph. Each edge must identify the relationship type (for example `derived_from`, `constrained_by`, `interfaces_with`, `located_relative_to`, `validated_by` or `manufactured_as`). Cycles must be detected. Where iterative coupled calculations are genuinely required, represent them as an explicit solver/model with convergence criteria, not as an uncontrolled cyclic dependency graph.
+
+### 10.7.2 EDM validation
+
+Validate the EDM independently of CAD. Checks include schema validity, unit consistency, parameter provenance, unresolved required values, dependency integrity, interface compatibility, constraint satisfaction, stale derived values and conflicting source revisions. A CAD model must not be generated from an EDM that fails its configured generation-readiness checks, except for an explicitly marked exploratory draft.
+
+## 10.8 Design synthesis and alternatives
+
+The engineering workflow must support the synthesis of a solution from requirements rather than requiring a pre-existing component definition. Design synthesis includes:
+
+1. Interpreting requirements and classifying input certainty and authority.
+2. Identifying missing, conflicting or ambiguous information.
+3. Establishing functional decomposition and equipment configuration candidates.
+4. Identifying governing engineering methods, constraints and interfaces.
+5. Creating candidate EDMs with traceable parameter relationships.
+6. Executing approved calculations and analysis.
+7. Comparing feasible alternatives against the design objectives and constraints.
+8. Selecting or recommending a candidate with recorded rationale.
+9. Generating and validating geometry and deliverables.
+10. Iterating when calculations, constraints, reviews or changed requirements reveal a problem.
+
+The system should be able to produce more than one viable arrangement when the requirements permit alternatives. It must explain trade-offs and identify which criteria are hard constraints, preferences or optimization objectives. It must not present an optimization result as an engineering approval.
+
+# 11. Engineering knowledge, calculations and analysis services
+
+## 11.1 Separation of engineering reasoning and deterministic analysis
+
+AI agents are responsible for engineering reasoning within their assigned competence and permissions. They may interpret requirements, identify applicable methods, develop candidate configurations, prepare calculation inputs, explain assumptions, evaluate alternatives and recommend design decisions.
+
+AI agents must not invent engineering criteria, numerical results, standard requirements or source facts. Numerical calculations and analyses that affect design must be performed by deterministic, versioned and tested services or approved engineering software. A language model may help formulate a model or interpret its output, but it must not silently replace a validated solver or calculation method.
+
+The architecture must distinguish:
+
+- **Engineering knowledge:** approved principles, methods, standards, design guidance, constraints and source material.
+- **Engineering rules:** machine-readable conditions, limits, relationships and decision logic, with applicability and authority.
+- **Calculation/analysis services:** deterministic numerical execution, simulation, optimization or solver interfaces.
+- **AI reasoning:** selection and orchestration of knowledge, methods, tools and alternatives; explanation and engineering synthesis.
+- **Human engineering authority:** approval of design bases, critical decisions, deviations and release as defined in §3.3.
+
+## 11.2 Engineering knowledge and rule contracts
+
+Every machine-actionable rule or method must be governed as a controlled engineering item. Its record must include:
+
+- Stable ID, domain, discipline and version.
+- Purpose and applicability conditions.
+- Rule/method type: requirement, constraint, equation, heuristic, recommendation, check or optimization objective.
+- Formal expression or unambiguous execution definition where automation is intended.
+- Units, variables, input schema and output schema.
+- Source references, standard edition or approved company document.
+- Validity limits, exclusions and known limitations.
+- Required assumptions and required input data.
+- Priority/authority and conflict-resolution policy.
+- Test cases and expected results where executable.
+- Owner, reviewer, approval state and effective date.
+- Change history and affected EDM schemas/workflows/calculations.
+
+Rules must distinguish mandatory constraints from recommendations and preferences. A recommendation must never be silently treated as a mandatory standard. Conflicting rules must be surfaced with source and authority information; the AI must not resolve a material conflict by guessing.
+
+RAG content is evidence and reference material, not automatically executable or authoritative design logic. A retrieved passage may inform an engineer or agent, but only approved, controlled methods and rules may directly govern a released design.
+
+## 11.3 Calculation and analysis service contract
+
+Each calculation or analysis service must define:
 
 - Service ID and version.
-- Engineering purpose.
-- Input schema and units.
+- Engineering purpose and discipline.
+- Input schema, units and preconditions.
 - Output schema and units.
-- Methodology and equations.
+- Methodology, equations, numerical method or solver.
 - Reference standards or technical sources.
-- Validity limits.
-- Assumptions.
-- Warnings and error conditions.
-- Test cases and reference results.
-- Software/library versions.
+- Validity limits and exclusions.
+- Assumptions and convergence criteria, where applicable.
+- Warnings, failure modes and error conditions.
+- Test cases, benchmark/reference results and tolerances.
+- Software/library/solver versions.
 - Verification status and responsible owner.
+- Whether it is suitable for concept, basic or detailed engineering and what review is required.
 
-Each executed calculation must preserve:
+Each execution must preserve exact inputs, source artifact revisions, method and software versions, outputs, warnings, logs or solver evidence, timestamp, executing agent, provenance for every input and reviewer/verification status. Result status remains `preliminary estimate`, `checked` or `approved`. Only approved results may support released deliverables.
 
-- Exact inputs.
-- Input artifact revisions.
-- Method/version.
-- Software version.
-- Outputs.
-- Warnings.
-- Timestamp.
-- Executing agent.
-- Reviewer/verification status.
-- Provenance of every input value (source requirement, artifact revision, approved decision, or explicit placeholder).
-- Result status: `preliminary estimate`, `checked` or `approved`. Only `approved` results may be used as the basis for released deliverables.
+Services must fail explicitly when inputs are missing, outside validity limits, inconsistent or non-convergent. They must not silently extrapolate beyond validated ranges.
 
-## 11.3 Initial calculation capabilities
+## 11.4 Types of engineering capability
 
-Potential calculation services include:
+The platform should support a growing catalogue of independently validated capabilities, including as relevant:
 
-- Gas flow conversion and properties.
+- Unit conversion, fluid properties and gas-flow normalization.
 - Mass and energy balances.
-- Pressure drop.
-- ESP process and electrical sizing.
-- Filtration sizing.
-- Scrubber hydraulic/process calculations.
-- Thermal calculations.
-- Structural load calculations.
-- Piping pressure-drop calculations.
+- Process sizing and performance calculations.
+- Pressure drop and flow distribution.
+- Electrical and electrostatic calculations.
+- Thermal analysis and expansion.
+- Structural load analysis and member checks.
+- Mechanical strength and stability calculations.
+- Sheet-metal geometry, bend/development calculations and manufacturing checks.
+- Tolerance, clearance and fit analysis.
+- Computational geometry and interference checks.
+- Finite-element analysis (FEA), computational fluid dynamics (CFD) or other simulation integrations where justified.
+- Optimization and constraint-solving services.
 
-These are examples, not authorization to implement unverified engineering formulas. Domain experts must approve methods, references, limits and test cases.
+This list is a capability roadmap, not authorization to implement unverified engineering formulas or to use any particular commercial solver. The engineering owner approves methods, references, validation cases and intended use.
+
+## 11.5 Design-space exploration and optimization
+
+The platform should be able to explore alternatives when the design problem can be expressed through explicit variables, constraints and objectives. Examples of objectives may include material use, weight, cost, footprint, pressure drop, maintenance access, fabrication complexity or transport constraints, subject to the approved engineering requirements.
+
+The AI may propose candidate variables, constraints and objectives. Deterministic solvers or optimization libraries perform numerical search. The system records the search space, bounds, solver/version, objective weights, constraints, convergence status, candidate results and reasons for rejecting candidates.
+
+Optimization is advisory. A numerically optimal candidate is not automatically safe, compliant, manufacturable or approved. All relevant checks and human gates remain mandatory.
+
+## 11.6 Engineering domain packages and skill separation
+
+An equipment domain package is the governed home for domain-specific engineering content. It must remain separate from the procedural skill layer (§6.8).
+
+A domain package may contain:
+- Domain-specific schemas and EDM extensions.
+- Approved engineering knowledge references and source metadata.
+- Machine-readable rules and constraints.
+- Calculation service definitions, input/output contracts and validated test cases.
+- Component and design-pattern metadata.
+- Geometric capability mappings and CAD operation definitions.
+- Verification criteria and domain-specific evaluation cases.
+- Domain workflows and applicability metadata.
+
+A skill may guide an agent through using a domain package, but it must not duplicate authoritative rules, equations, limits or source text as hidden prompt instructions. Where a skill contains explanatory examples, they must be clearly labelled non-authoritative and linked to the controlled source. A change to a domain rule must be governed as a rule change; it must not require silently editing every skill that refers to it.
+
+The platform must validate compatibility between skill versions and domain-package versions. A skill may declare a version range, but the exact resolved domain-package version used for a task must be pinned in the execution record. Domain packages and skills have separate owners, review paths and release cycles.
 
 # 12. CAD and 3D engineering architecture
 
@@ -930,37 +1271,48 @@ Example operations:
 - Compare model revisions.
 - Report model metadata and errors.
 
-Generic scripting may be available to authorized CAD agents, but should be sandboxed and permission-controlled.
+The CAD service must expose a general-purpose, engineering-level geometric capability layer. It must allow an authorized agent or design-synthesis service to construct a new configuration by composing supported geometric operations and features, rather than requiring a finished equipment-specific template for every possible design.
 
-**Template-first generation.** AI agents produce engineering geometry by selecting approved library components and assembly templates and setting their parameters through the operations above. The agent decides *what* to build and *which values* to use; deterministic, tested template code decides *how* the geometry is built. This keeps geometry repeatable, checkable and independent of the model that produced the parameters.
+The capability layer should expose typed, validated operations such as:
 
-Free-form generated CAD scripts are permitted only to draft *new* library components or templates. Such a draft runs in a sandbox, is stored as source code, and becomes usable on projects only after review, tests (§21.3) and approval, like any other library change.
+- Create and constrain sketches, profiles, planes, axes, datums and coordinate systems.
+- Create solids and surfaces through extrusion, revolution, loft, sweep, Boolean operations, offsets, trims and intersections.
+- Create plates, sheet-metal-like panels, folds, bends, seams, hems, cut-outs and flat patterns where supported and validated.
+- Create beams, columns, channels, angles, stiffeners, frames and structural members from section definitions.
+- Create holes, slots, flanges, nozzles, bolted connections, weld preparations and other common features.
+- Position, orient, pattern, mirror, array and connect parts through explicit interfaces.
+- Create assemblies and subassemblies with constraints and reference geometry.
+- Inspect dimensions, topology, mass properties, clearances, interference, connectivity and geometric validity.
+- Extract material, thickness, manufacturing and BOM metadata.
+- Generate drawing views, dimensions and annotations from controlled model data.
+
+These are general geometric primitives and engineering operations, not assertions that every listed operation is already implemented. Each operation must declare supported inputs, units, tolerances, failure modes and validation coverage. The CAD adapter maps the neutral capability contract to FreeCAD-specific operations.
+
+**Knowledge-driven generative engineering.** The preferred flow is: AI and engineering services develop a structured EDM; approved calculations and constraints determine or validate dimensions; a design-synthesis layer maps the EDM into a sequence or graph of general geometric operations; the CAD worker executes those operations deterministically; geometry and engineering checks evaluate the result. The same EDM and operation plan must be replayable with recorded tool and software versions.
+
+AI-generated scripts or feature plans may be used where they materially improve flexibility, but they must not execute with unrestricted access. They run in a sandbox with bounded runtime, memory, file access, permitted APIs and resource limits. Their inputs, source/plan, tool calls and outputs are recorded. Geometry operations must be validated after execution. A generated script is not trusted merely because it completes without an exception.
+
+Reusable templates, components, assemblies and design patterns remain supported and encouraged where they provide a sound starting point. They are **optional accelerators**, not mandatory building blocks. The system may retrieve and reuse an approved pattern, adapt it, combine several patterns, or create a new geometry plan from general capabilities. It must not force a poor template fit merely because a similar item exists in a library.
+
+Any reusable pattern or automated capability promoted to approved status must be versioned, reviewed and regression-tested. A one-off generated design need not become a reusable library component unless the engineering owner or domain owner chooses to promote it.
 
 ## 12.4 Component data model
 
-A reusable component definition should include:
+Reusable components, assemblies and design patterns are library resources. They are not the complete engineering model and they are not mandatory for generating a new solution. A library item should include, as applicable:
 
-- Component ID and type.
-- Equipment-domain classification.
-- Parametric properties and constraints.
-- Units and allowable ranges.
-- Material properties.
-- Geometry/source references.
-- Connection/interface definitions.
-- Manufacturing metadata.
-- Applicable design rules.
-- Revision.
-- Verification requirements.
-- Provenance and approval status.
+- Stable ID, name, domain/discipline and intended function.
+- Applicability conditions and known exclusions.
+- Parametric properties, constraints, units and valid ranges.
+- Material and manufacturing metadata.
+- Geometry/feature plan or CAD source reference.
+- Interfaces, datums and connection definitions.
+- Applicable approved rules and calculations.
+- Verification requirements and regression cases.
+- Revision, provenance, owner and approval status.
 
-Component and drawing templates are controlled engineering items in their own right. Each template has:
+Library items have controlled states such as `draft`, `approved` and `withdrawn`. Only approved library items may be reused in released project deliverables. Each use records the exact library revision and any project-specific adaptations. The generated model must also record its EDM revision, geometric operation plan, CAD adapter/version, and the source of each critical dimension.
 
-- A template version, independent of the components produced with it.
-- An approval status (`draft`, `approved`, `withdrawn`). Only approved templates may be used for project deliverables.
-- A regression test suite: reference parameter sets with expected geometry, checks, drawing content and BOM, run on every change of the template or of the pinned FreeCAD version.
-- A change history linked to change requests (§15).
-
-Every generated model and drawing records the template ID and version used.
+The platform must not encode every possible equipment component as bespoke application code. New domain configurations should normally be expressed as data, rules, EDM structures, calculations and combinations of general geometric operations. Component-specific code is justified only when a genuine new reusable capability is required and cannot reasonably be expressed using existing capabilities. Such code is treated as a controlled extension with tests, review and approval.
 
 ## 12.5 CAD concurrency and ownership
 
@@ -980,7 +1332,7 @@ Implement:
 
 A CAD edit must be linked to the task, agent, project, source revision and resulting revision.
 
-Native FreeCAD documents cannot be merged reliably at file level. The initial implementation must therefore use exclusive edit leases (one editor per document at a time) and must not attempt automatic merging of `.FCStd` files. Because template-first models (§12.3) can be regenerated from their recorded parameters, "merging" is done by reconciling the *parameter sets* and regenerating, not by merging geometry. Large assemblies should be split into separately leased subassembly documents to reduce contention.
+Native FreeCAD documents cannot be merged reliably at file level. The initial implementation must therefore use exclusive edit leases (one editor per document at a time) and must not attempt automatic merging of `.FCStd` files. Because generated models can be regenerated from their recorded EDM and geometric operation plan (§12.3), integration should reconcile the *engineering model and operation plan* and regenerate, not attempt file-level geometry merging. Large assemblies should be split into separately leased subassembly documents to reduce contention.
 
 ## 12.6 Headless and GUI execution
 
@@ -1003,10 +1355,10 @@ The drawing subsystem must support:
 - **Title block from data:** title, drawing number, issued revision, project, scale, material, author, checker, approver, dates and status are filled automatically from artifact metadata (§10.2). They are never typed in manually on the drawing.
 - **Drawing numbering:** a configurable numbering scheme per project, with uniqueness enforced by the platform.
 - **Revision table:** generated from the artifact's issued-revision history and the linked change records (§15).
-- **Views:** standard projections, sections, details and isometric views, defined by the drawing template of the component or assembly (template-first, §12.3).
-- **Dimensions and annotations:** critical (functional) dimensions are defined in the component template and placed deterministically. Fully automatic dimensioning of arbitrary geometry is not assumed to be achievable; the agent's role is to choose views and annotations within template rules, and to flag drawings that need human layout work.
+- **Views:** standard projections, sections, details and isometric views, defined by the drawing definition associated with the artifact type, EDM and project drawing profile; reusable drawing templates may be used where appropriate (§12.7).
+- **Dimensions and annotations:** critical (functional) dimensions are identified from the EDM, interface definitions and approved drawing rules, then placed using deterministic drawing operations. Fully automatic dimensioning of arbitrary geometry is not assumed to be achievable; the agent may propose views and annotations, while drawing checks and human review identify layouts that need adjustment.
 - **Parts lists:** BOM tables and balloons on assembly drawings, generated from the same BOM data as the BOM deliverable, so the two cannot disagree.
-- **Status marking:** drawings that are not released carry a clear watermark or status field (for example "DRAFT – NOT FOR CONSTRUCTION").
+- **Status marking:** drawings that are not released carry a clear watermark or status field (for example "DRAFT – NOT FOR FABRICATION", §12.8).
 - **Outputs:** native TechDraw page (source), PDF for issue, DXF where required. Every output records the source model revision and FreeCAD version.
 - **Drawing checks:** automated checks before review, for example: all title block fields filled, drawing number valid, every BOM item has a balloon, dimensions are not broken after model recompute, views are not empty and lie within the frame, and the drawing revision matches the model revision. Check results are attached to the review (§14).
 
@@ -1294,9 +1646,11 @@ Maintain explicit relationships between:
 - Verification records.
 - Release packages.
 
-A change to an upstream parameter must identify potentially affected downstream artifacts. For example, changing an ESP collecting-plate dimension may affect electrical clearances, electrode alignment, rapping, supports, casing, assembly, drawings and BOM.
+A change to an upstream requirement, process condition, design decision, rule, calculation method or parameter must trigger impact analysis across the engineering dependency graph. The graph includes both document references and semantic EDM dependencies: which values were derived from which inputs, which configuration decisions depended on which constraints, which calculations consumed which parameters, and which CAD features/drawings/BOM items were generated from which EDM elements.
 
-Impact analysis should identify candidates for review; it must not assume every dependency is automatically invalid.
+For example, a change in gas flow may affect process calculations, equipment configuration, electrode arrangement, collecting area, casing dimensions, structural loads, electrical interfaces, geometry, drawings and BOM. The platform must not treat this as a simple CAD dimension update. It must identify affected analyses, mark derived values and artifacts as potentially stale, rerun applicable methods, reconsider configuration alternatives where necessary, regenerate geometry and deliverables, and repeat relevant verification.
+
+Impact analysis should identify candidates for review; it must not assume every dependency is automatically invalid. Each affected node receives a status such as `unaffected`, `review_required`, `recalculate`, `redesign_candidate`, `regenerate`, `reverify` or `superseded`, with a recorded reason. The responsible discipline agent evaluates the impact and records the disposition. A material change may require a new design baseline and renewed human approval.
 
 **Parameter-level traceability.** Every design parameter of a component instance (for example each value passed to a CAD template) links to its origin: a requirement, an approved engineering decision, a calculation result or an explicitly labelled placeholder. A deliverable cannot be submitted for approval while it contains unresolved placeholders, unless the gate explicitly permits them.
 
@@ -1328,6 +1682,10 @@ Implement:
 Agents must only access projects, documents, tools and operations explicitly authorized for them.
 
 MCP tools must enforce authorization on the server side. Hiding a tool from an agent is not sufficient security.
+
+Skill packages are executable-adjacent trusted configuration and must be treated as controlled supply-chain artifacts. Validate package provenance and hashes; scan or review scripts; restrict file, network, process and tool access; and never execute arbitrary code merely because it is included in a skill directory. Skill instructions and bundled references are not allowed to override system security policy, engineering approval gates or server-side authorization. Retrieved documents and user-provided content remain untrusted even when a skill tells the agent how to process them.
+
+Skill-declared permissions are requests and constraints, not grants. The effective permission set is computed server-side and is no broader than the intersection described in §6.8.4.
 
 Potentially destructive operations—deleting files, modifying released artifacts, changing permissions, publishing externally or altering production systems—must require explicit authorization and appropriate confirmation.
 
@@ -1486,7 +1844,10 @@ For every important engineering output, be able to answer:
 - Which sources and citations?
 - Which calculation service and version?
 - Which tools were invoked?
-- Which instructions/prompt version, model inputs and model outputs were involved? (Model interactions for tasks that produce controlled artifacts are retained according to the data-retention policy, §30.)
+- Which agent-definition/instruction version and AI skill ID/version/package hash were used?
+- Which skill dependencies, domain-package versions, schemas and rule versions were resolved?
+- Which model inputs and outputs were involved? (Model interactions for tasks that produce controlled artifacts are retained according to the data-retention policy, §30.)
+- Which skill execution record links the procedure, tools, validations and outputs?
 - Which reviewer checked it?
 - Which human approved it?
 - Which release package contains it?
@@ -1559,15 +1920,25 @@ Use deterministic fixtures and evaluation sets to test:
 - Resistance to prompt injection.
 - Correct use of approved revisions.
 
-## 21.3 Engineering validation
+## 21.3 Skill tests and evaluation
 
-Every calculation service must have independently checked reference cases and stated validity limits.
+Every approved skill must have automated contract tests and a versioned evaluation suite (§6.8.7). Tests must cover normal use, invalid and incomplete inputs, out-of-scope requests, permission denial, dependency incompatibility, tool/service failures, escalation behavior and required output invariants.
 
-CAD operations must have geometry and parameter validation tests.
+Model-dependent skills must be evaluated against a fixed benchmark set. Evaluation must measure not only successful completion but also whether the skill correctly refuses, blocks or escalates when information is insufficient or conflicting. Use acceptance thresholds approved by the skill owner and, for engineering skills, the engineering owner. Keep representative regression cases and record model/provider changes as evaluation-relevant changes.
 
-Domain workflows must be reviewed by qualified engineering specialists before use on real projects.
+The same benchmark inputs should be run against candidate skill versions before promotion. Results must be compared with the previous approved version. A model change, major prompt/procedure change, dependency change or material tool change may require requalification even if the skill package itself is unchanged. Live model evaluation runs on promotion and requalification within a recorded cost budget; CI uses recorded or stubbed model responses for the deterministic parts (§6.8.7). Confidential benchmark cases stay in `data/evaluation/` and run only on model routes approved for their classification (D-15, D-16).
 
-## 21.4 Acceptance is evidence-based
+## 21.4 Engineering validation
+
+Every calculation and analysis service must have independently checked reference cases and stated validity limits.
+
+EDM schemas, relationship evaluation and rule execution must have tests for valid, invalid, boundary, missing-data, conflicting-source and unit-conversion cases.
+
+General geometric operations must have geometry and parameter validation tests. Design-synthesis workflows must be evaluated on cases that require materially different dimensions, proportions and configurations—not only on repeated runs of one predefined template.
+
+Domain workflows, executable rules and reusable patterns must be reviewed by qualified engineering specialists before use on real projects. Verification must check engineering intent, not only whether CAD geometry is topologically valid.
+
+## 21.5 Acceptance is evidence-based
 
 A feature is not complete merely because a demo appears to work. Acceptance requires tests, documented limitations and traceable evidence.
 
@@ -1575,6 +1946,7 @@ A feature is not complete merely because a demo appears to work. Acceptance requ
 
 The platform must be:
 
+- Knowledge-driven and capable of generative design synthesis within approved engineering boundaries.
 - Modular and extensible.
 - Fault tolerant.
 - Recoverable.
@@ -1585,7 +1957,7 @@ The platform must be:
 - Model/provider independent.
 - Deployable on-premises.
 - Capable of hybrid deployment.
-- Reproducible for calculations and deliverables. Calculations and template-generated CAD must give the same result when re-run with the same recorded inputs and software versions. LLM outputs are not expected to be reproducible by re-running the model; their reproducibility comes from recording the exact inputs, instructions, model and outputs (§19.2).
+- Reproducible for calculations and deliverables. Calculations and generated CAD must give equivalent results when re-run with the same recorded EDM, rules, operation plan and software versions. LLM outputs are not expected to be reproducible by re-running the model; their reproducibility comes from recording the exact inputs, instructions, model and outputs (§19.2).
 - Capable of versioned data contracts.
 - Able to isolate customer/project data.
 - Maintainable by a small engineering software team.
@@ -1620,6 +1992,20 @@ The following IDs should be retained in issue tracking and implementation plans.
 | ARC-020 | Security is enforced at API, data, agent and tool boundaries |
 | ARC-021 | Calculation services are deterministic, versioned and tested |
 | ARC-022 | Released packages preserve exact artifact revisions and approvals |
+| ARC-023 | Requirements and process data are represented in a traceable Engineering Design Model (EDM) |
+| ARC-024 | EDM parameters preserve units, provenance, status and dependency relationships |
+| ARC-025 | Engineering knowledge, rules and methods are versioned, sourced and approval-controlled |
+| ARC-026 | Design synthesis can derive candidate configurations without requiring a matching predefined component template |
+| ARC-027 | General geometric capabilities support construction of novel equipment geometry from an EDM and operation plan |
+| ARC-028 | Reusable components and templates are optional accelerators rather than mandatory design constraints |
+| ARC-029 | Changes propagate through engineering dependencies, calculations, configuration, CAD and deliverables |
+| ARC-030 | The platform can compare feasible design alternatives against constraints and objectives |
+| ARC-031 | The platform provides reusable, independently versioned AI skills that are separate from agent identities and engineering domain packages |
+| ARC-032 | Skill execution validates contracts, compatibility, dependencies and permissions, and records the exact skill package and resolved execution context |
+| ARC-033 | Approved skills are evaluated and regression-tested against versioned test cases before release and after material changes |
+| ARC-034 | Skills cannot grant permissions, override engineering rules, replace deterministic services or bypass workflow and human approval gates |
+| ARC-035 | Engineering domain packages own authoritative domain schemas, knowledge, rules, calculations and validation content independently of procedural skills |
+| ARC-036 | Every controlled skill execution is traceable to its inputs, outputs, dependencies, model, tools, validations and resulting artifacts |
 
 # 24. Recommended implementation strategy
 
@@ -1678,32 +2064,27 @@ Otherwise the work is done by an existing agent, or by deterministic code where 
 
 ## 24.3 First engineering demonstration
 
-Use a bounded ESP example rather than attempting a complete precipitator immediately.
+Use a bounded ESP example rather than attempting a complete precipitator immediately. The demonstration must prove that the platform can derive a design from requirements and engineering knowledge, not merely fill in a fixed template.
 
-A suitable demonstration might be a configurable ESP component or small subassembly with:
+**Selected (product owner, 18 Nov 2026):** an ESP **hopper** (single pyramidal hopper with outlet flange). It remains the first demonstration because it has clear interfaces and produces useful geometric, manufacturing and drawing outputs. Parameter ranges and engineering design criteria still require engineering-owner approval.
 
-- Explicit input requirements.
-- Approved parameter definitions.
-- Defined interfaces.
-- Parametric FreeCAD model.
-- Deterministic geometry checks.
-- Drawing and BOM extraction.
-- Independent review.
-- Revision and approval record.
+The hopper demonstration must include:
 
-The exact component and engineering values must be selected and approved by the engineering owner. Use synthetic or approved test data until the workflow is validated.
+- Source requirements and interface contracts, with source citations and certainty classifications.
+- An EDM that expresses the hopper configuration, dimensions, parameter relationships, datums, interfaces and provenance.
+- Approved design rules/criteria where applicable; unknown criteria remain explicitly unknown or as labelled placeholders.
+- A design-synthesis step that derives a geometric construction plan from the EDM using general CAD capabilities.
+- A native editable FreeCAD model, drawing, BOM, DXF flat patterns and STEP/AP242 export.
+- Deterministic checks for geometry, interface dimensions, volume, wall/valley angles and plate developments, plus any approved design criteria.
+- Independent review, change impact analysis, revision and approval record.
 
-**Selected (product owner, 18 Nov 2026):** an ESP **hopper** (single pyramidal hopper with outlet flange). Parameter ranges and design criteria still require engineering-owner approval. It was chosen because:
+The system must demonstrate at least three materially different input sets: (1) baseline hopper proportions; (2) changed top interface, outlet size and/or height; and (3) a substantially different proportion/configuration that cannot be handled by merely changing a few values in a hard-coded component script. The AI/design-synthesis layer must derive a valid new EDM and geometry plan without introducing new hopper-specific application code for each case.
 
-- The geometry is simple to model parametrically (top opening length and width, outlet size, height or wall slopes, plate thickness).
-- It has clear interfaces: the casing above (top flange) and the discharge equipment below (outlet flange).
-- Useful checks are pure geometry, so no engineering design criteria need to be invented: actual valley angle and wall angles computed from the model, hopper volume, interface dimensions matching the interface contract, plate developments for fabrication.
-- Design criteria that the checks are compared against (for example a minimum valley angle) come from the approved design basis. Until an approved value exists, the value is an explicit, human-entered, clearly labelled placeholder.
-- It produces all MVP deliverable types: input requirement, interface contract, calculation record (geometry/volume), parametric model, drawing, BOM, verification report and approval record.
+The hopper example must not be mistaken for an approved universal hopper design method. The engineering owner defines which criteria and calculations are applicable. Geometry checks such as volume, angle and interface dimensions can be computed directly, but whether a measured angle or thickness is acceptable depends on approved design criteria.
 
 ## 24.4 Prove equipment independence early
 
-After the first ESP vertical slice works, implement a very small second-domain example, such as a fabric-filter component or another bounded equipment component.
+After the first ESP vertical slice works, implement a very small second-domain example, such as a fabric-filter component or another bounded equipment component. The second-domain test must reuse the same EDM framework, rule/calculation contracts, general geometric capability layer, artifact and workflow infrastructure while supplying its own domain schemas, methods and constraints. It must not require copying ESP-specific component code.
 
 The purpose is to prove that:
 
@@ -1738,47 +2119,72 @@ Each phase ends with a demonstrable result, passing tests and updated documentat
 Answer the questions in §1.2 for the hopper with as little infrastructure as possible. The engineering parts built here are kept and reused by later phases; only the orchestration is temporary.
 
 - Collect the reference cases (§1.2) and the current manual effort figures.
-- Hopper template in FreeCAD (template-first, §12.3): model, drawing according to §12.8, BOM, DXF flat patterns and STEP export.
-- Deterministic geometry checks and drawing checks (§24.3, §12.7).
+- Hopper EDM and design-synthesis prototype: derive the model from the input requirements and approved rules using general geometric capabilities (§10.7–10.8, §12.3). Reusable templates may be used as optional starting points, but the test must include a case that does not depend on a matching finished template.
+- Deterministic geometry, EDM, constraint and drawing checks (§21.4, §24.3, §12.7).
 - A lightweight document-extraction pipeline (not the full knowledge infrastructure of Phase 7): PDF text extraction, OCR for scanned documents, table extraction, and page-level source references. Phase 7 reuses and extends it.
 - An AI extraction step that uses this pipeline to produce the hopper input set as schema-validated data with source citations. Missing, ambiguous or conflicting values are flagged, never filled in. Only pre-design documents are used (§1.2).
+- The extraction procedure is written as a draft `engineering.requirement-analysis` skill package (`SKILL.md`, `manifest.yaml`, input/output schemas; §6.8.8, Appendix B) and loaded directly by the pipeline; no skill registry or runtime is built in this phase. The F-3 results are kept as its first evaluation results (confidential cases in `data/evaluation/`, §6.8.7).
 - Validation of the extracted input set by the engineering owner before CAD generation.
 - Simple orchestration: a command-line pipeline is sufficient. Results, inputs and review findings are stored in PostgreSQL with internal versions, so that the evidence is traceable. NATS, leases and departments are not required yet.
 - Review by the engineering owner using a checklist, with the time recorded.
+- The hopper proof (F-1, F-2, F-5, F-6, GE tests) and the extraction work (F-3) are independent and may proceed in parallel; the extraction work waits only for the pre-design input documents.
+- If the prototype starts from a component-specific template, an ADR records how the template relates to the general geometric capability layer (optional accelerator or seed of that layer, §12.3–12.4) before GE-04 is attempted.
+- The hopper scope is limited to what F-1, F-2 and F-5 need for the reference cases; completeness beyond that is deferred.
 
-**Exit criteria:** F-1 to F-7 measured and recorded for all reference cases, and a go/partial/no-go decision recorded in an ADR.
+**Exit criteria:** F-1 to F-7 measured and recorded for all reference cases, GE-01 to GE-08 results recorded, and a go/partial/no-go decision recorded in an ADR. Phase 2 does not start before this decision.
+
+## Generative-engineering acceptance tests (mandatory for the hopper proof)
+
+The hopper proof is not accepted solely because one reference hopper can be reproduced. It must demonstrate adaptability and traceability across distinct designs.
+
+| Test | Input/change | Expected behaviour |
+|:---|:---|:---|
+| GE-01 | Baseline approved hopper requirements and interfaces | Create a complete EDM, derive dimensions/relationships where approved, generate editable CAD and deliverables, and pass configured checks |
+| GE-02 | Change top opening dimensions | Identify affected EDM parameters, interfaces, geometry and drawings; regenerate and reverify |
+| GE-03 | Change outlet dimensions and hopper height | Re-evaluate dependent geometry, volume, angles and flat patterns; flag any criteria or data that need engineering review |
+| GE-04 | Supply substantially different proportions or a different valid panel arrangement | Generate a new construction plan from general geometric operations without new hopper-specific code or mandatory matching template |
+| GE-05 | Remove or conflict a critical input | Stop affected design decisions, identify the missing/conflicting source and request clarification; do not invent a value |
+| GE-06 | Change a governing design rule or calculation version | Identify affected EDM values and deliverables, recalculate/revalidate and preserve the prior baseline |
+| GE-07 | Re-run identical approved inputs, rules, services and software versions | Produce equivalent EDM, geometry and deliverables within declared numerical tolerances; record model nondeterminism separately |
+| GE-08 | Deliberately create an invalid interface or geometric constraint | Detect and report the violation; do not mark the design generation-ready |
+
+**No-bespoke-code criterion:** GE-02 through GE-04 must be achieved by changing input data, EDM content, approved rules, geometric operation plans and/or reusable library data. Adding a new hard-coded hopper variant or manually editing the generated CAD to pass the test is a failure. A genuinely missing general geometric capability may be implemented once as a reusable platform capability, reviewed and tested; the reason must be documented.
 
 ## Phase 2 - Walking skeleton
 
-Build the thinnest possible end-to-end path for the first demonstration component (§24.3), reusing the hopper template, checks and extraction from Phase 1. Every subsystem exists but is minimal:
+Build the thinnest possible end-to-end path for the first demonstration component (§24.3), reusing the EDM schema, design-synthesis path, checks and extraction capabilities from Phase 1. Every subsystem exists but is minimal:
 
 - Agent registry with persistent identities for the MVP agents (§24.2).
 - Project, department and team records; one project.
 - Task records with explicit states, leases and the agent execution cycle (§6.7), in a single runtime process.
+- Minimal skill registry and controlled execution (§6.8): package loader, manifest and name validation, package hashing, exact ID/version resolution, server-side permission intersection with refusal at resolution, input/output contract validation and an immutable skill execution record linked to the agent execution. The Phase 1 draft `engineering.requirement-analysis` package is the first registered skill. Draft skills may run only in a development configuration, and their execution records are marked accordingly. Lifecycle approvals and evaluation follow in Phases 3 and 5.
 - Messaging through the abstraction with NATS, using the outbox pattern for at least one event type.
 - One structured artifact type with internal versions and metadata.
 - One deterministic calculation service with reference test cases.
-- One FreeCAD template that produces a model and a drawing (PDF) from parameters.
+- One end-to-end EDM-to-CAD path that generates a model and drawing (PDF) from a structured engineering design and a recorded geometric operation plan. A reusable template may be used where appropriate, but the interface must not require one.
 - An independent verification agent that runs deterministic checks and records findings.
 - One human approval gate. A command-line or minimal web page is acceptable at this stage.
 - Audit records for every state change.
 
 Simplifications are allowed (for example, a simple web page instead of the React UI, local file storage behind the storage interface instead of S3) if they sit behind the same interfaces that later implementations will use, and are recorded as known limitations.
 
-**Exit criteria:** the demonstration runs end to end from input requirement to approved drawing, survives a restart in the middle of a task, and the audit trail answers the questions in §19.2.
+**Exit criteria:** the demonstration runs end to end from input requirement to approved drawing, survives a restart in the middle of a task, and the audit trail answers the questions in §19.2. The skill-layer criteria of Appendix B.5 marked for Phase 2 are demonstrated with the `engineering.requirement-analysis` package.
 
 ## Phase 3 - Core platform hardening
 
+- Skill lifecycle metadata and enforcement: draft, withdrawn and incompatible skills are refused for controlled execution; dependency resolution and compatibility checks; historical versions retrievable from the registry. Do not yet build a large skill marketplace.
 - Full task model, dependencies, retries, cancellation and recovery (§8).
 - Messaging: subject taxonomy, schemas, idempotent consumers, dead-letter handling (§7).
 - Persistent agent working state and model routing with budgets (§6).
 - User/service authentication and server-side authorization (§16).
 - Minimal React UI: projects, agents, tasks, activity feed, approvals.
 
-**Exit criteria:** multiple agents can be registered, assigned to projects, exchange messages, execute tasks with dependencies and recover after restart; permission tests pass.
+**Exit criteria:** multiple agents can be registered, assigned to projects, exchange messages, execute tasks with dependencies and recover after restart; permission tests pass. The skill-layer criteria of Appendix B.5 marked for Phase 3 are demonstrated.
 
 ## Phase 4 - Engineering information model
 
+- Skill input/output contracts integrated with artifact schemas and EDM contracts.
+- Separate domain-package metadata from skill metadata and validate declared compatibility.
 - Requirements and design-basis records.
 - Structured deliverable types.
 - Artifact metadata, internal versions and issued revisions (§10.3).
@@ -1792,6 +2198,8 @@ Simplifications are allowed (for example, a simple web page instead of the React
 
 ## Phase 5 - Workflow, verification, approval and change
 
+- Skill lifecycle approvals, reviewer roles and version-promotion gates.
+- Skill regression/evaluation runner; first `engineering.requirement-analysis` and `engineering.verification` skills.
 - Workflow engine/state machine (start with a PostgreSQL-backed state machine; adopt an external workflow engine only with an ADR).
 - Review assignments.
 - Independent verification.
@@ -1800,13 +2208,14 @@ Simplifications are allowed (for example, a simple web page instead of the React
 - Release package and immutable baseline.
 - Change request and impact analysis.
 
-**Exit criteria:** a deliverable can pass through draft, review, revision, verification, human approval and release with a complete audit trail; a change to an upstream parameter identifies the affected downstream artifacts.
+**Exit criteria:** a deliverable can pass through draft, review, revision, verification, human approval and release with a complete audit trail; a change to an upstream parameter identifies the affected downstream artifacts. The remaining skill-layer criteria of Appendix B.5 (marked for Phase 5) are demonstrated.
 
 ## Phase 6 - CAD and drawing infrastructure
 
 - FreeCAD worker/service with the pinned version.
 - Engineering-level MCP tools (§12.3).
-- Component schema and template library (template-first).
+- `cad.freecad-parametric-modelling` and `cad.techdraw-generation` skills, bound to validated CAD service operations.
+- EDM schema, general geometric capability layer and optional reusable component/design-pattern library.
 - Controlled CAD ownership, leases and revisions (§12.5).
 - Geometry checks.
 - Drawings according to §12.7: templates, title blocks, numbering, revision tables, parts lists, drawing checks.
@@ -1815,7 +2224,7 @@ Simplifications are allowed (for example, a simple web page instead of the React
 - S3-compatible object storage (SeaweedFS, D-21) for CAD files and outputs.
 - Blender visualization pipeline (may be deferred until after Phase 8).
 
-**Exit criteria:** a CAD agent creates, inspects, revises and publishes a controlled parametric model and drawing set with traceable outputs, and drawing checks run automatically.
+**Exit criteria:** a CAD agent creates, inspects, revises and publishes a controlled parametric model and drawing set with traceable outputs, and drawing checks run automatically. The Appendix B.5 criterion marked for Phase 6 is demonstrated.
 
 ## Phase 7 - Knowledge infrastructure
 
@@ -1831,7 +2240,8 @@ Simplifications are allowed (for example, a simple web page instead of the React
 
 ## Phase 8 - ESP engineering division and second-domain proof
 
-- ESP domain package.
+- ESP domain package, with authoritative rules/calculations kept separate from skill procedures.
+- `esp.hopper-design` skill using approved ESP domain-package versions.
 - Approved process/mechanical data models.
 - ESP calculation services.
 - ESP component library.
@@ -1844,7 +2254,7 @@ Simplifications are allowed (for example, a simple web page instead of the React
 
 ## Phase 9 - Additional equipment domains
 
-Add fabric filters, WFGD, SCR, DSI and GGH as separate domain packages. Prioritize according to business value and available validated engineering knowledge.
+Add fabric filters, WFGD, SCR, DSI and GGH as separate domain packages. Prioritize according to business value and available validated engineering knowledge. Add or adapt skills as reusable procedural packages, but do not copy domain rules into skills. Prove that an existing skill can be reused with a new domain package where the procedure is genuinely domain-independent.
 
 ## Phase 10 - Integrated plant engineering
 
@@ -1887,6 +2297,10 @@ The AI coding agent implementing IAIEP must follow these instructions.
 - Implement incrementally and keep the project runnable.
 - Prefer simple, explicit interfaces over premature abstraction.
 - Keep domain-specific engineering logic out of core platform services.
+- Keep reusable task procedures in versioned skills, not duplicated in agent definitions.
+- Keep authoritative engineering rules, calculations and domain schemas in governed domain packages/services, not hidden in skill instructions.
+- Treat every skill package as untrusted until provenance, schema, permissions and tests have been validated.
+- Pin exact skill and dependency versions for every controlled task; never silently upgrade a running task.
 - Use typed schemas and validate inputs/outputs.
 - Use migrations for database changes.
 - Add tests with each feature.
@@ -1920,6 +2334,9 @@ The AI coding agent implementing IAIEP must follow these instructions.
 - Require explicit authorization for destructive or externally visible actions.
 - Do not expose project data to unapproved model providers.
 - Log important tool calls and their results.
+- Enforce skill permissions server-side; a skill must never elevate an agent's privileges.
+- Do not describe LLM output as deterministic merely because a skill was used.
+- Require skill regression evidence before promoting a skill version to approved.
 
 ## 27.5 Definition of done
 
@@ -1969,9 +2386,8 @@ ai-engineer/
   pyproject.toml
   .devcontainer/
   doc/
-    IAIEP_Comprehensive_Specification_v1.2.md
+    IAIEP_Comprehensive_Specification_v3.0.md
     adr/
-    open-decisions.md
     architecture/
     operations/
   src/iaiep/
@@ -1988,10 +2404,30 @@ ai-engineer/
     audit/
     security/
     units/
+    skills/         # skill registry, package loader, hashing, resolution, execution records (§6.8)
     domain_sdk/     # extension points for domain packages (§4.3)
   domains/
     esp/            # separate package: schemas, rules, calcs, templates
   agent_definitions/  # versioned role definitions and instructions (§6.7)
+  skills/           # governed skill packages: skills/<namespace>/<name>/ for skill_id <namespace>.<name> (§6.8.3)
+    engineering/
+      requirement-analysis/   # engineering.requirement-analysis
+        SKILL.md
+        manifest.yaml
+        schemas/
+        references/
+        tests/                # non-confidential cases only (§6.8.7)
+      design-basis/           # engineering.design-basis
+      verification/           # engineering.verification
+      change-impact-analysis/ # engineering.change-impact-analysis
+    cad/
+      freecad-parametric-modelling/
+      techdraw-generation/
+    esp/                      # ESP skills; ESP rules stay in domains/esp (§11.6)
+      hopper-design/          # esp.hopper-design
+  data/
+    reference/      # git-ignored confidential reference cases (D-15)
+    evaluation/     # git-ignored confidential skill/agent evaluation cases and reports (§6.8.7)
   workers/
     freecad/        # runs inside FreeCAD's Python; templates, TechDraw, MCP server
   web/              # React + TypeScript
@@ -2000,8 +2436,10 @@ ai-engineer/
     unit/
     integration/
     e2e/
-    evaluation/
+    evaluation/     # evaluation runner and shared, non-confidential benchmark sets
 ```
+
+Skill packages live under the top-level `skills/` directory, not inside domain packages, because skills and domain packages have separate owners, review paths and release cycles (§11.6). The skill registry is a module of the modular monolith (`src/iaiep/skills/`), not a separate directory or service (§6.8.9).
 
 This is a logical proposal, not a requirement to create every directory or service immediately. Avoid empty scaffolding. Create modules when there is a concrete implementation need. Additional domain packages (fabric filter, WFGD, SCR, DSI, GGH) are added under `domains/` when their phase starts.
 
@@ -2024,10 +2462,14 @@ The following principles are non-negotiable:
 13. **Controlled CAD:** native parametric models remain authoritative and revisions are managed.
 14. **RAG is not the system of record:** source and approved engineering artifacts remain authoritative.
 15. **Incremental implementation:** prove a complete vertical slice before scaling.
+16. **Reusable procedures:** skills are independent, versioned capabilities shared across agents.
+17. **Authority separation:** skills describe procedures; domain packages and approved services own engineering authority.
+18. **No false determinism:** skill use improves procedural consistency and traceability but does not make LLM output deterministic.
+19. **Skill governance:** approved skills are immutable, permission-bounded, evaluated and regression-tested.
 
 # 30. Decision register
 
-Decisions taken by the product owner, or delegated by the product owner to the architect and recorded here (v1.2, 18 Nov 2026). Each decision can be revised through an ADR (§26). The coding agent must maintain this register as `doc/open-decisions.md` (or ADRs) and must not invent answers to items marked as open.
+Decisions taken by the product owner, or delegated by the product owner to the architect and recorded here (first recorded in v1.2, 18 Nov 2026; maintained since). Each decision can be revised through an ADR (§26). This section is the decision register (ADR-0003); the coding agent maintains it here, records detailed outcomes as ADRs, and must not invent answers to items marked as open.
 
 ## 30.1 Decided
 
@@ -2095,6 +2537,10 @@ IAIEP is successful when it operates as a persistent, decentralized engineering 
 - Engineering information is structured, versioned and traceable.
 - Calculations use validated deterministic methods.
 - CAD models are parametric, editable and controlled.
+- Engineering designs are synthesized from requirements, approved knowledge, calculations and constraints through a traceable EDM.
+- New configurations and dimensions can be generated using general geometric capabilities without writing bespoke component code for every design.
+- Reusable components and patterns accelerate work when appropriate but do not constrain the solution space.
+- Changes propagate through engineering reasoning, calculations, configuration, geometry and deliverables.
 - Independent verification can challenge and reject work.
 - Humans approve the defined critical gates and final releases.
 - New equipment domains can be added without redesigning the platform core.
@@ -2123,6 +2569,214 @@ The first delivery objective is not to simulate a complete engineering company. 
 | RAG | Retrieval-Augmented Generation |
 | SCR | Selective Catalytic Reduction |
 | TechDraw | FreeCAD workbench for 2D engineering drawings |
-| Template-first | Rule that AI agents generate geometry by parameterizing approved templates rather than writing free-form CAD code (§12.3) |
+| Engineering Design Model (EDM) | Structured representation of engineering intent, configuration, parameters, relationships, interfaces and provenance from which CAD and deliverables are derived (§10.7) |
+| Design synthesis | Derivation of candidate engineering configurations from requirements, knowledge, constraints and analysis (§10.8) |
+| Geometric capability | General validated CAD operation or feature that can be composed into new geometry (§12.3) |
+| Design pattern | Optional reusable engineering arrangement or solution, not a mandatory template (§12.4) |
 | Walking skeleton | Minimal end-to-end implementation that touches every major subsystem (Phase 2) |
+| AI skill | Versioned, governed procedural package that guides an agent through a bounded task (§6.8) |
+| Skill package | Directory/package containing a skill's instructions, manifest, schemas, dependencies and tests |
+| Skill registry | Platform catalogue of skill identities, versions, lifecycle states, hashes and dependencies |
+| Skill execution | One invocation of an exact skill version, linked to an agent execution and task |
+| Domain package | Governed equipment-domain content containing schemas, knowledge, rules, calculations and validation data (§11.6) |
+| Skill reproducibility | Ability to reconstruct the exact procedural and execution context; distinct from deterministic LLM output (§6.8.5) |
 | WFGD | Wet Flue-Gas Desulfurization |
+
+
+# Appendix B. AI skill package specification
+
+This appendix defines the minimum practical package format for IAIEP skills. It is normative for skills registered by the platform. A skill may add files, but it must not weaken the required metadata, security, testing or governance fields.
+
+## B.1 Recommended package layout
+
+```text
+skills/<namespace>/<name>/   # skill_id <namespace>.<name> (§6.8.3)
+  SKILL.md                 # Frontmatter (name, description) + human-readable procedure
+  manifest.yaml            # Machine-readable identity, version and governance
+  schemas/
+    input.schema.json      # Input contract
+    output.schema.json     # Output contract
+  references/              # Curated supporting material; authority remains external
+  scripts/                 # Optional reviewed helper code; not executed until the sandbox exists (§6.8.3)
+  tests/
+    cases/                 # Synthetic/non-confidential positive and negative cases; confidential cases in data/evaluation/ (§6.8.7)
+    expected/              # Expected invariants or structured outcomes
+  CHANGELOG.md             # Excluded from the package hash
+  README.md                # Optional maintainer notes; excluded from the package hash
+```
+
+Do not create empty directories or placeholder skills merely to match this layout. Include only the assets that the skill actually needs.
+
+## B.2 Minimum manifest example
+
+The following is an illustrative manifest contract, not an approved engineering skill or a complete JSON/YAML schema. Values must be adapted and validated by the implementation. The matching `SKILL.md` starts with this frontmatter, which is the only place `name` and `description` are stored (§6.8.3):
+
+```markdown
+---
+name: requirement-analysis
+description: >
+  Extracts and classifies requirements from authorized project sources,
+  identifies ambiguity and conflict, and produces a traceable structured
+  requirement artifact. Use when new project source documents arrive, when
+  requirements change, or when a design basis is prepared.
+---
+```
+
+```yaml
+skill_id: engineering.requirement-analysis
+display_name: Engineering Requirement Analysis
+version: 1.0.0
+status: draft
+
+owner:
+  department: technical_office
+  role: skill_owner
+
+scope:
+  task_types:
+    - requirement_extraction
+    - requirement_classification
+  domains:
+    - equipment-independent
+  exclusions:
+    - approving_design_basis
+    - inventing_missing_values
+
+triggers:
+  - new_project_source_documents
+  - requirement_change
+  - design_basis_preparation
+
+inputs:
+  schema: schemas/input.schema.json
+  required:
+    - project_id
+    - source_artifacts
+    - extraction_scope
+
+outputs:
+  schema: schemas/output.schema.json
+  artifact_types:
+    - customer_requirement
+    - engineering_requirement_specification
+    - assumption_and_risk_record
+
+dependencies:
+  schemas:
+    - id: iaiep.requirement
+      version: ">=1.0.0,<2.0.0"
+  domain_packages: []
+  skills: []
+  services:
+    - id: document.extraction
+      version: ">=1.0.0,<2.0.0"
+
+tools:
+  allowed:
+    - document.read
+    - artifact.create_draft
+    - source.cite
+  prohibited:
+    - artifact.release
+    - approval.grant
+
+permissions:
+  requested:
+    - project.read
+    - artifact.create_draft
+  destructive: false
+  external_network: false
+
+procedure:
+  entrypoint: SKILL.md
+  stop_on:
+    - inaccessible_source
+    - unresolved_authority_conflict
+    - missing_critical_context
+
+verification:
+  required:
+    - output_schema_valid
+    - every_extracted_requirement_has_source
+    - critical_values_not_invented
+
+tests:
+  directory: tests/
+  required_categories:
+    - positive
+    - missing_input
+    - conflicting_sources
+    - prompt_injection
+    - permission_boundary
+
+limitations:
+  - Extraction is not engineering approval.
+  - Unclear or conflicting source statements must be reported, not reconciled by guessing.
+
+compatibility:
+  minimum_platform_version: 0.3.0   # version of the iaiep Python package (pyproject.toml)
+
+governance:
+  approval_required: true
+  approver_role: engineering_owner
+  effective_date: null
+```
+
+## B.3 Required contents of SKILL.md
+
+Every `SKILL.md` must contain these sections, in a form appropriate to its task:
+
+1. **Purpose:** what the skill does and the intended outcome.
+2. **When to use:** positive triggers and applicability.
+3. **When not to use:** exclusions and handoff conditions.
+4. **Required inputs:** data, artifact types, source authority and units.
+5. **Outputs:** structured artifacts and required metadata.
+6. **Procedure:** ordered steps and decision points.
+7. **Tool usage:** permitted tools and the purpose of each call.
+8. **Engineering boundaries:** authoritative sources, approved rules and deterministic services to use.
+9. **Validation:** checks, expected invariants and evidence.
+10. **Failure and escalation:** conditions that require stopping, blocking or asking for clarification.
+11. **Security:** handling of untrusted documents, prompt injection and sensitive data.
+12. **Limitations:** known gaps and unsupported cases.
+
+Instructions must be actionable and testable. Avoid vague directives such as "make a good engineering decision" unless the skill defines the evidence, constraints and escalation path that make the instruction operational.
+
+## B.4 Skill authoring and release workflow
+
+1. Create a draft package with a unique `skill_id`.
+2. Define its scope and explicitly identify what it does not do.
+3. Identify authoritative schemas, domain packages, rules and services; do not duplicate their content.
+4. Define input/output schemas and permission requirements.
+5. Write the procedure and stop/escalation conditions.
+6. Add positive, negative, security and regression tests.
+7. Run static package validation, dependency validation and test suites.
+8. Obtain technical review from the skill owner and any required engineering review.
+9. Approve and publish an immutable package version and hash.
+10. Register the exact version and approval evidence.
+11. Monitor execution outcomes and findings.
+12. Deprecate or withdraw the version through a controlled change; preserve historical execution records.
+
+## B.5 Initial implementation acceptance criteria
+
+The skill-layer implementation is acceptable when it can demonstrate all of the following. The phase column states at whose exit the criterion must be met (§25):
+
+| Criterion | Phase |
+|:---|:---|
+| Register a skill with a stable ID, semantic version, manifest and package hash | 2 |
+| Reject malformed manifests, duplicate immutable versions, invalid package contents and inconsistent `skill_id`/directory/frontmatter names | 2 |
+| Detect a changed published package through its hash (CI and loader) | 2 |
+| Resolve an exact skill version | 2 |
+| Resolve the skill's declared dependencies and check compatibility | 3 |
+| Reject a draft, withdrawn or incompatible skill for controlled execution | 3 |
+| Check skill requirements against server-side agent/task/project permissions, and refuse the skill at resolution when a required permission is missing | 2 |
+| Invoke a skill through the agent runtime without copying its full procedure into the agent definition | 2 |
+| Validate input and output contracts | 2 |
+| Persist an immutable skill execution record linked to the agent execution, task and artifacts | 2 |
+| Preserve historical skill versions and prevent silent upgrades | 3 |
+| Run skill regression tests and retain results before approval | 5 |
+| Demonstrate that an LLM-dependent skill can block or escalate on missing/conflicting information | 5 |
+| Demonstrate that deterministic calculations remain delegated to their validated services | 5 |
+| Demonstrate that CAD operations remain delegated to validated CAD service operations | 6 |
+| Demonstrate that the skill cannot bypass human approval or artifact-release gates | 5 |
+
+The first implementation need not include a graphical skill marketplace, dynamic remote skill installation, automatic skill self-modification or autonomous publication. Those features are explicitly out of scope until the basic governance and execution model is proven.
