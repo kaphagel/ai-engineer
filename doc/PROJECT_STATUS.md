@@ -1,18 +1,59 @@
 # IAIEP – Project status and handoff
 
-**Last updated:** 2026-11-23 (spec v3.0 adopted; Phase 1, hopper template 0.6.0: steps 1–5 done; paused at the start of step 6)
+**Last updated:** 2026-11-23 (session paused; spec v3.0 reviewed and adopted, skill layer drafted, ADR-0005 accepted, TSD analysed)
 **Current phase:** Phase 1 – Feasibility prototype (in progress)
-**State:** The hopper pipeline runs end to end (input set → FreeCAD worker → model, drawing PDF, STEP, flat-pattern DXF, BOM → checks and report) and is tested against a real reference delivery (ADR-0004). Template steps 2 (tier beams and stiffeners) and 3 (top beams and support interface) are done, and the stiffening now follows engineering rules (with explicit overrides), so the hopper adapts to changes of size: a sweep of 12 size and shape variants passes all checks. Steps 4 (support brackets, simplified) and 5 (internal bracing) are done; next: accessories (inspection doors, level studs, covers, corner plates), then the conveyor. Testing uses the local Ollama model; the Anthropic account still has no credit.
+**State:** The hopper pipeline runs end to end (input set → FreeCAD worker → model, drawing PDF, STEP, flat-pattern DXF, BOM → checks and report) and is tested against a real reference delivery (ADR-0004): template `esp.hopper` 0.6.0, steps 1–5 done, 77 checks pass, 12-variant sweep passes. On 23 Nov no production code changed: the session reviewed spec v3.0 (AI skills), drafted the first two platform skills, decided how CAD construction continues (ADR-0005) and analysed the company TSD (technical specification document) as the future input for a whole ESP. Testing uses the local Ollama model; the Anthropic account still has no credit.
 
 To resume, open this repository in VS Code (Dev Container) and tell the coding agent:
 
-> Read `doc/PROJECT_STATUS.md` and `doc/IAIEP_Comprehensive_Specification_v3.0.md`, then continue from "Next steps".
+> Read `doc/PROJECT_STATUS.md` and `doc/IAIEP_Comprehensive_Specification_v3.0.md`, then continue from "Where we left off".
 
-## Where we left off (session 2026-11-20)
+## Where we left off (session 2026-11-23)
 
-**Paused at:** the start of **hopper step 6 (accessories)**. Nothing was started in code for step 6; the working tree is clean.
+**Paused after:** the TSD analysis. Nothing is half-done in code. Commit `3c529f5` (spec v3.0) is pushed; the rest of the session's work is **not committed yet** (see below).
 
-**Agreed plan for the rest of the hopper** (one commit per step, each checked against the reference delivery and the 12-variant sweep):
+### Uncommitted work (commit first when resuming)
+
+| Path | Content |
+|:---|:---|
+| `doc/IAIEP_Comprehensive_Specification_v3.0.md` | Edits after commit `3c529f5`: ADR-0005 wording in §3.5/§12.1, planned skill catalogue, phase-plan changes |
+| `doc/PROJECT_STATUS.md` | This file |
+| `doc/adr/0001-freecad-headless-execution.md` | Notes 13–16 from the freecad-ai review |
+| `doc/adr/0005-weldment-operations-and-editable-model.md` | New, accepted |
+| `skills/engineering/requirement-analysis/`, `skills/esp/hopper-design/` | Draft platform skills 0.1.0 |
+| `.github/skills/freecad-worker/SKILL.md` | Coding-assistant skill: FreeCAD worker rules and commands |
+| `spikes/freecad-varset/` | VarSet/expression spike (evidence for ADR-0005) |
+| `.gitignore` | Adds `doc/spec/` |
+
+Before committing: scan the staged diff for customer names, project names and real values (D-15). On 23 Nov two confidential TSD spreadsheets were removed from the then-unpushed commits before anything was pushed; GitHub never received them. Never use `git push --mirror` (old local agent checkpoints under `refs/agents/` still contain them).
+
+### What was decided on 23 Nov
+
+- **Spec v3.0 adopted** with review edits: skill naming compatible with the public Agent Skills format, deterministic skill selection for controlled work, refusal instead of reduced permissions, canonical package hash and CI immutability check, version rules, solo-approval rule, confidential evaluation cases in `data/evaluation/`, minimal skill registry moved into the Phase 2 walking skeleton, go/no-go ADR as Phase 1 exit, planned skill catalogue (§6.8.8).
+- **Skill granularity:** one skill per type of task, at most one design skill per component family, parts are data, never skills. Platform skills live in `skills/<namespace>/<name>/`; coding-assistant skills in `.github/skills/`.
+- **ADR-0005 accepted:** the hopper template becomes a plan generator in the ESP domain package; a generic worker executes plans of general weldment operations (`plate`, `profile`, `tube`, `cut`, `group`); the native FCStd file is a regenerated, inspectable output (spec §3.5, §12.1). Scripted FreeCAD features are not used in files given to users.
+- **External projects reviewed:** ghbalf/freecad-ai (LGPL; ideas recorded in ADR-0001 notes 13–16, no code copied) and glotoff/freecad-skills (MIT; nothing useful, not adopted).
+
+### TSD analysis (company technical specification document)
+
+The TSD is the company's one-stop input document for a whole ESP, filled in by the project manager from customer documents before design. Two sanitized examples are in `doc/spec/` (git-ignored, internal; the originals are in `data/reference/tsd/`). Do not commit them or copy their values into committed files.
+
+- **Structure:** one Excel template (v2.0) with 20 sheets: Project Data, ESP Code, PDD (process cases, mechanical design data, loads), MD1/MD2 (casing, hopper, inlet/outlet, screens, insulators, profile standard, accessories), DT (dust transport), Support, Surface Treatment, Insulation, ED1–ED4 (electrical), MTS (component breakdown with sub-numbers 2001…2067), S&PD, Rev, ETS, and two hidden sheets with dropdown lists and the formulas that decode the ESP code. About 118 named ranges, so cells are stable per template version.
+- **ESP code:** encodes the configuration in one string: chambers, ESP type, per field group the number of fields, field length (dm) and duct-spacing letter (H 300, M 400, S 500, X 600 mm), field widths (dm), field height (dm), hopper type (A1 trough, A2 pyramid, A3 chain scraper, A6 transversal trough, A7 transversal chain scraper), U-code (meaning unknown, ask), discharge-system code E<type><levels><drive> and collecting-system code C<drive><plate type><rapping position>.
+- **What it gives the hopper:** hopper type, field sizes, plate thickness, profile standard, design pressure and temperature, dust density and collected dust, accessories (inspection door size, level indicators, heating), conveyor type, loads. **What it does not give:** hopper height, tiers, slot width, stiffening, valley angle: company design rules that the engineering owner must provide (E-02).
+- **Weaknesses as machine input:** free text in numeric fields, decimal commas, mixed units, project-specific case names, a mix of design and procurement data.
+- **Fabric filter:** out of scope (separate project).
+
+### Next step when resuming: choose one
+
+1. **TSD importer + ESP-code parser** (recommended first; deterministic, no AI): a module in the ESP domain package that reads a TSD of template v2.0 into a structured design basis with a cell reference as the source of every value, and checks the code against the expanded fields. Tests with a small synthetic TSD fixture only. Then a mapping table *TSD field → hopper input / rule / missing* to turn the E-02 questions into a concrete list for the engineering owner.
+2. **ADR-0005 migration steps 1–3** (plan schema and generic executor, plan generator in `iaiep_esp.hopper.plan`, parity with the template), then step 6 accessories.
+
+Both are independent. Later: retarget the F-3 test to *customer documents → TSD fields* (the requirement-analysis skill's target becomes the TSD), and after the hopper build an ESP envelope (GA) generator from the ESP code as the backbone for all sub-deliveries.
+
+### Earlier hopper plan (still valid, after ADR-0005 migration)
+
+(one commit per step, each checked against the reference delivery and the 12-variant sweep):
 
 1. **Step 6 – accessories:** inspection door openings (bought-in standard door: place it and cut the opening), level indicator studs, protective covers, small corner plates. Reference part drawings in the hopper sub-delivery folder: protective covers, level stud, plates; the GA parts list gives quantities and masses. Read them first (render with pymupdf in `/tmp`, never commit).
 2. **Conveyor:** a separate template (reference conveyor drawing in the same folder; wear plates are NM400/Hardox 400).
@@ -41,11 +82,10 @@ Both runs currently give **77 checks, 0 failed**. The 12-variant flexibility swe
 
 **Open items waiting for people:**
 
-- Push to GitHub: several local commits are not pushed yet (`git push`).
+- Product owner: open both TSDs in `doc/spec/` in Excel once to confirm they are intact after the cleanup, and ask the engineers what the ESP code's U-code means.
 - Engineering owner: the questions in section 4 (joint allowances, height reference, profile standard, steel density, approval of the derived stiffener rules).
 - Product owner: the reference input documents (customer specification, meeting notes) for the AI extraction test (F-3); then decide whether Ollama runs on the laptop GPU or a secured server (the current server is open on the LAN and holds an unsuitable model).
-- Unanswered decision: accept "template = parametric definition" for Phase 1 although the FCStd file is not editable-parametric (spec §12.1)? Record it as an ADR once decided.
-- Unanswered decision (spec v2.0/v3.0): how the existing hopper template (`esp.hopper` 0.6.0, hopper-specific code) relates to the knowledge-driven approach – an optional accelerator (§12.3, §12.4) or the seed of the general geometric capability layer – and how GE-04 ("no new hopper-specific code", §25) will be met. Record it as an ADR before step 6 continues.
+- **Decided 2026-11-23:** [ADR-0005](adr/0005-weldment-operations-and-editable-model.md) accepted. The hopper template becomes a plan generator in the ESP domain package, and a generic worker executes plans of general weldment operations (GE-04). The native FCStd file is a regenerated, inspectable output (spec §3.5/§12.1 updated). Step 6 waits for migration steps 1–3, so accessories are not written twice.
 
 ---
 
@@ -59,11 +99,21 @@ Both runs currently give **77 checks, 0 failed**. The 12-variant flexibility swe
 | [adr/0002-llm-tool-calling.md](adr/0002-llm-tool-calling.md) | AI tool-calling spike results and decisions. |
 | [adr/0003-repository-conventions.md](adr/0003-repository-conventions.md) | Layout, tooling, coding, testing and schema conventions. |
 | [adr/0004-hopper-template-wall-panels.md](adr/0004-hopper-template-wall-panels.md) | Hopper template from wall panels; comparison with the reference delivery. |
+| [adr/0005-weldment-operations-and-editable-model.md](adr/0005-weldment-operations-and-editable-model.md) | Accepted: template → plan of general weldment operations; regenerated native model. |
 | [../workers/freecad/README.md](../workers/freecad/README.md) | FreeCAD worker: build, run, layout. |
+| [../skills/](../skills/) | Draft platform skills: `engineering.requirement-analysis`, `esp.hopper-design` (spec §6.8). |
+| [../.github/skills/freecad-worker/SKILL.md](../.github/skills/freecad-worker/SKILL.md) | Coding-assistant skill: FreeCAD worker rules and commands. |
+| [../spikes/freecad-varset/README.md](../spikes/freecad-varset/README.md) | Editable-model spike (VarSet and expressions), evidence for ADR-0005. |
 | [archive/IAIEP_Comprehensive_Specification_v1.1.md](archive/IAIEP_Comprehensive_Specification_v1.1.md) | Superseded version, kept for history only. |
 | [../spikes/freecad-headless/README.md](../spikes/freecad-headless/README.md) | How to rerun the FreeCAD spike. |
 
-## 2. What was done (sessions of 18–19 Nov 2026)
+## 2. What was done
+
+### Session of 23 Nov 2026
+
+Specification v3.0 reviewed and edited; skill catalogue and two draft skills; FreeCAD worker image rebuilt on this host; VarSet spike; ADR-0005 accepted; two external FreeCAD AI projects reviewed; coding-assistant skill; TSD analysed; confidential spreadsheets removed from unpushed history and sanitized TSDs cleaned. Details in "Where we left off".
+
+### Sessions of 18–19 Nov 2026
 
 ### Specification review → v1.2
 
@@ -150,7 +200,7 @@ uv run iaiep-hopper data/reference/esp-project/hopper_case.toml \
 
 ### Roadmap (agreed 2026-11-23, spec §25)
 
-1. **Prove the engineering process with a real hopper** (Phase 1: F-1, F-2, F-5, F-6, GE-01 to GE-08). First the template ADR (see "Where we left off"), then only the hopper scope that F-1, F-2 and F-5 need.
+1. **Prove the engineering process with a real hopper** (Phase 1: F-1, F-2, F-5, F-6, GE-01 to GE-08). First migration steps 1–3 of ADR-0005, then only the hopper scope that F-1, F-2 and F-5 need.
 2. **Prove the requirement-analysis skill** (Phase 1: F-3), in parallel with 1, as soon as the pre-design input documents arrive.
 3. **Go/no-go decision** on F-1 to F-7, recorded in an ADR. Nothing below starts before it.
 4. **Walking skeleton with the minimal skill registry and controlled execution** (Phase 2): tasks and executions in PostgreSQL, the hopper pipeline wrapped as tasks, the draft skill registered as the first skill.
@@ -159,9 +209,9 @@ uv run iaiep-hopper data/reference/esp-project/hopper_case.toml \
 
 ### Phase 1 (developer / coding agent)
 
-1. ADR: how the hopper template relates to the general geometric capability layer, and how GE-04 will be met.
+1. ADR-0005 migration steps 1–3 (plan schema and generic executor, plan generator in `iaiep_esp.hopper.plan`, parity with the template) before step 6.
 2. **Step 6**, limited to what F-1, F-2 and F-5 need: inspection door openings, level studs, protective covers; then the conveyor template and a drawing set closer to the reference (sections, details).
-3. Document extraction and AI extraction (Ollama) of the hopper input set, once the reference input documents are available (F-3). Write the extraction procedure as a draft `engineering.requirement-analysis` skill package (`skills/engineering/requirement-analysis/`, spec §6.8.8, Appendix B); confidential evaluation cases go in the git-ignored `data/evaluation/`.
+3. Document extraction and AI extraction (Ollama) of the hopper input set, once the reference input documents are available (F-3). The draft skill package exists: `skills/engineering/requirement-analysis/` (spec §6.8.8, Appendix B); confidential evaluation cases go in the git-ignored `data/evaluation/`. The draft `skills/esp/hopper-design/` records the procedure of the `iaiep-hopper` pipeline; keep it in step with pipeline changes. All other skills are planned only (catalogue in spec §6.8.8); create a package when its work starts.
 4. Store runs, inputs and check results in PostgreSQL with internal versions (spec §25 Phase 1).
 5. GE-01 to GE-08, repeatability measurement (F-6) and the remaining F-criteria; then the go/no-go ADR.
 

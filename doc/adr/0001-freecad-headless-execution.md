@@ -1,6 +1,6 @@
 # ADR-0001: FreeCAD 1.1.4 headless execution for model and drawing generation
 
-- **Status:** Accepted (spike result; amended 2026-11-19 with Phase 1 worker findings 9–12)
+- **Status:** Accepted (spike result; amended 2026-11-19 with Phase 1 worker findings 9–12; 2026-11-23 notes 13–16 from an external reference)
 - **Date:** 2026-11-18
 - **Related:** spec §12.6, §12.7, §12.8, §1.2 (F-6), D-02, D-25, X-01
 - **Evidence:** [spikes/freecad-headless](../../spikes/freecad-headless/)
@@ -44,6 +44,17 @@ Findings from the Phase 1 worker (19 Nov 2026):
 10. **Threaded views with the GUI.** Without the GUI, TechDraw computes hidden lines synchronously. With the GUI, each view runs in its own background thread and a document recompute starts all views at once. Python code must not pump the event loop (`Gui.updateGui()`) while waiting; the worker uses Qt timers in the real event loop and computes views one at a time. Face finding (only needed for hatching) is switched off.
 11. **Units.** FreeCAD's default unit schema shows lengths over 10 m in metres ("11.09"). The worker sets the `MmMin` schema, including the per-document unit system that FreeCAD 1.x applies when the GUI opens a file, and formats dimensions as whole millimetres.
 12. **Native file for users.** A model saved only by `freecadcmd` has no GUI document; one re-saved from the GUI phase had all solids hidden and the default camera (a 4 mm field of view), so it opened as an "empty" 3D view. The worker now shows the solids, sets a fitted isometric camera, closes the drawing tab and saves from the GUI phase; the platform checks the saved file (`native.plates_visible`, `native.camera_fitted`).
+
+## Notes from an external reference (2026-11-23)
+
+[ghbalf/freecad-ai](https://github.com/ghbalf/freecad-ai) (LGPL-2.1, alpha) is an interactive FreeCAD workbench in which a model drives about 57 typed CAD tools. It was reviewed for reuse; no code was copied. It models single PartDesign parts in the GUI, which does not fit our headless weldment worker, but it records FreeCAD 1.x behaviour and tool-design practice that we need later:
+
+13. **`Part::Cut` re-parents PartDesign Bodies.** A `Part::Cut`/`Fuse`/`Common` claims its operands as tree children, burying a Body's sketches and features. If an editable PartDesign model is used, booleans between Bodies must be `PartDesign::Boolean` inside the base Body (their issue #17).
+14. **Transactions without the GUI.** `abortTransaction` does nothing in documents created outside the GUI (`UndoMode` 0). A failed operation must remove its partial objects explicitly.
+15. **State after every recompute.** After each operation, check that no object is in an `Invalid` or `Error` state instead of only checking the final shape. Recompute errors otherwise show up later as wrong geometry.
+16. **Parameters as VarSet + expressions.** An `App::VarSet` holds typed, unit-aware parameters; `setExpression` binds feature properties to them, so the native file stays editable in FreeCAD. Tested for our worker in [spikes/freecad-varset](../../spikes/freecad-varset/) (ADR-0005): works with built-in objects only; scripted features fail silently without their module.
+
+For the CAD MCP service (spec §12.3, Phase 6), their tool design is a useful reference: every tool returns one result shape (success, output, error, data); an unknown object name returns the closest existing names; inspection tools (`describe_model`, `list_faces`) let the model check a result instead of assuming it. Their execution of model-written Python and their self-rewriting skills are not compatible with spec §12.3 and §6.8 and are not adopted.
 
 ## Decision
 

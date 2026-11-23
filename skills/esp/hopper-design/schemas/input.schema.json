@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "iaiep:skill:esp.hopper-design:input:0.1.0",
+  "title": "ESP hopper design input",
+  "description": "References only. The hopper input set itself is validated by the ESP domain package (iaiep_esp.hopper.inputs.HopperCase).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["project_id", "input_set", "domain_package"],
+  "properties": {
+    "project_id": { "type": "string", "minLength": 1 },
+    "input_set": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifact_id", "revision", "schema_id", "schema_version", "classification", "validated_by_engineering_owner"],
+      "properties": {
+        "artifact_id": { "type": "string", "minLength": 1 },
+        "revision": { "type": "string", "minLength": 1 },
+        "schema_id": { "const": "esp.hopper-input-set" },
+        "schema_version": { "const": 1 },
+        "classification": { "enum": ["public", "internal", "confidential", "restricted"] },
+        "validated_by_engineering_owner": { "type": "boolean" }
+      }
+    },
+    "domain_package": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version"],
+      "properties": {
+        "id": { "const": "esp" },
+        "version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$" }
+      }
+    }
+  }
+}

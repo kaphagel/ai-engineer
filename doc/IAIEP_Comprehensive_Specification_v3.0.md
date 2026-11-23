@@ -34,8 +34,10 @@ Changes in the 3.0 review (23 Nov 2026):
 - One shared permission and tool vocabulary (§6.8.3, Appendix B).
 - Aligned the skill priorities with the phase plan, added a draft requirement-analysis skill to Phase 1, moved the minimal skill registry and controlled execution into the Phase 2 walking skeleton, and assigned the Appendix B.5 acceptance criteria to phases (§6.8.8, §25, B.5).
 - Phase 1: hopper proof and extraction may run in parallel; GE-01 to GE-08 results and the go/no-go ADR are exit criteria, and Phase 2 waits for the decision; an ADR is required where the prototype starts from a component-specific template (§25).
+- Added the planned skill catalogue for the ESP project with granularity rules; draft packages for `engineering.requirement-analysis` and `esp.hopper-design` are created in Phase 1 (§6.8.8, §28).
 - Corrected the repository layout for skills, the registry and evaluations (§28).
 - Editorial: §10.6 moved before §10.7; drawing status marking made consistent ("NOT FOR FABRICATION"); decision register is §30 itself (ADR-0003), not `doc/open-decisions.md`.
+- Defined "editable" for generated CAD models as regenerable from the recorded EDM, operation plan and software versions; no scripted features in native files given to users (§3.5, §12.1, ADR-0005).
 
 Changes in 1.2 (historical; section references are to v1.2 — for example, v2.0 replaced the "template-first" rule with knowledge-driven design synthesis):
 
@@ -198,7 +200,7 @@ No core function may depend permanently on one AI provider.
 
 - **FreeCAD** is the authoritative parametric engineering CAD environment.
 - **Blender** is used for visualization, presentation, rendering and communication.
-- CAD source models and engineering drawings must remain editable and traceable.
+- CAD source models and engineering drawings must remain editable and traceable. For generated models, "editable" means regenerable: the model can be regenerated from its recorded EDM (in Phase 1 the input set), geometric operation plan and software versions, and the native file opens with all parts visible and can be inspected and measured. Native files whose parameters can be changed directly in FreeCAD are an option tied to the production CAD decision (X-04) (ADR-0005).
 - STEP/AP242 and DXF may be used for exchange, but they do not replace native source models.
 - **Baseline version:** FreeCAD 1.1.x (latest stable at the time of writing: 1.1.4, September 2026). One exact version is pinned per deployment and recorded with every CAD output. Upgrading the pinned version is a controlled change: CAD regression tests (§21.4) must pass before upgrading, because model recomputation can change between versions.
 - Engineering drawings are produced with the FreeCAD **TechDraw** workbench (see §12.7).
@@ -645,12 +647,47 @@ Skills are introduced in the order of the phase plan (§25):
 
 | Phase | Skill work |
 |:---|:---|
-| 1 | `engineering.requirement-analysis` as a **draft** package (`SKILL.md`, `manifest.yaml`, schemas), used directly by the F-3 extraction step and evaluated on the reference cases. No registry or runtime is built; the package and its evaluation results seed the later registered version |
+| 1 | `engineering.requirement-analysis` as a **draft** package (`SKILL.md`, `manifest.yaml`, schemas), used directly by the F-3 extraction step and evaluated on the reference cases. No registry or runtime is built; the package and its evaluation results seed the later registered version. `esp.hopper-design` as a **draft** package that records the procedure of the Phase 1 hopper pipeline and points to the ESP domain package for inputs, rules, calculation and checks |
 | 2 | Minimal registry, loader, hashing, permission intersection and execution records in the walking skeleton; the Phase 1 draft becomes the first registered skill |
 | 3 | Lifecycle enforcement, dependency resolution, compatibility checks and historical versions |
 | 5 | Evaluation runner and lifecycle approvals; `engineering.requirement-analysis` and `engineering.verification` promoted through the lifecycle. `engineering.verification` must be approved before the platform is relied on for consequential engineering outputs |
 | 6 | `cad.freecad-parametric-modelling` and `cad.techdraw-generation`, bound to validated CAD service operations |
 | 8 | `esp.hopper-design` with approved ESP domain-package versions; `engineering.design-basis` and `engineering.change-impact-analysis` when their workflows exist |
+
+#### Planned skill catalogue
+
+The table below is the planned catalogue for the ESP project. It fixes identifiers and boundaries in advance, so that work on one subsystem does not invent overlapping skills. A package is created only when work on that skill starts; planned skills have no directory, no manifest and no registry entry until then (Appendix B.1). The catalogue is updated through the normal change process.
+
+Granularity rules:
+
+- One skill per **type of task**, not per physical part. Parts (panels, stiffeners, brackets, plates) are EDM elements with rules in the domain package and geometry from the CAD capability layer; they never become skills.
+- Equipment-independent work (requirements, design basis, interfaces, CAD, drawings, verification, change impact) has one shared skill in the `engineering` or `cad` namespace.
+- Each equipment component family has at most one domain design skill. Discipline work that is not equipment-specific (support structures, access platforms) uses a discipline namespace such as `structural`, so it can be reused by other equipment domains.
+- A skill is split only at a review/approval handoff, a permission or agent boundary, an independence requirement, a need for separate evaluation, or genuine reuse (§24.2 applies by analogy). Sub-procedures of a large skill go into its `references/` files instead.
+- When two domain design skills turn out to share their procedure and differ only in rules, they are replaced by one general skill that reads the rules from the domain package (Phase 9).
+
+| Skill ID | Scope | Owner department | Phase | Notes |
+|:---|:---|:---|:---|:---|
+| `engineering.requirement-analysis` | Extract and flag inputs from source documents | Technical Office | 1 (draft), 2 | Created |
+| `engineering.design-basis` | Design basis and open-issues register | Technical Office | 8 | |
+| `engineering.interface-coordination` | Agree, revise and track interface contracts between subsystems (§10.4) | Technical Office | 4 | For example hopper–casing and hopper–conveyor flanges |
+| `engineering.verification` | Independent verification of any artifact | Quality & Verification | 5 | Independent from authorship |
+| `engineering.change-impact-analysis` | Impact of a change through the EDM dependency graph | Technical Office | 8 | |
+| `cad.freecad-parametric-modelling` | Any EDM and operation plan to a controlled parametric model | CAD Engineering | 6 | |
+| `cad.techdraw-generation` | Drawings from any model and drawing definition | CAD Engineering | 6 | |
+| `structural.support-structure-design` | Support structure for equipment | Structural Engineering | 8+ | Reusable across equipment domains |
+| `structural.access-platform-design` | Walkways, platforms, ladders and stairs | Structural Engineering | 8+ | Reusable across equipment domains |
+| `esp.process-design` | Fields, collecting area and electrode arrangement from the process basis | Process Engineering | 8+ | |
+| `esp.casing-design` | Casing, roof and stiffening | Mechanical Engineering | 8+ | |
+| `esp.hopper-design` | Hopper design synthesis | Mechanical Engineering | 1 (draft), 8 | Created |
+| `esp.conveyor-design` | Dust conveyor under the hopper | Mechanical Engineering | 8+ | Candidate to merge with `esp.hopper-design` |
+| `esp.gas-distribution-design` | Inlet/outlet nozzles and gas distribution screens | Mechanical Engineering | 8+ | |
+| `esp.collecting-electrode-design` | Collecting electrodes and suspension | Mechanical Engineering | 8+ | Candidate to merge with discharge electrodes as `esp.internals-design` |
+| `esp.discharge-electrode-design` | Discharge electrodes, frames and suspension | Mechanical Engineering | 8+ | See above |
+| `esp.rapping-design` | Rapping systems | Mechanical Engineering | 8+ | |
+| `esp.penthouse-design` | Penthouse and HV insulator compartments | Mechanical Engineering | 8+ | |
+
+BOM generation, flat patterns, exports and checks are deterministic code in services and domain packages, not skills.
 
 ### 6.8.9 Skill registry and discovery
 
@@ -1233,7 +1270,7 @@ It must support:
 - DXF export where appropriate.
 - Revision and change traceability.
 
-The platform must preserve native editable models. A rendered image or neutral export is not an adequate replacement for the source model.
+The platform must preserve native editable models (in the sense of §3.5). A rendered image or neutral export is not an adequate replacement for the source model. A generated model is changed through its inputs and regenerated, not by editing the native file; scripted FreeCAD features (`FeaturePython`) are not used in native files given to users, because without the platform's code they silently keep outdated geometry (ADR-0005).
 
 **CAD tool boundary.** The company's current CAD system is CATIA. A FreeCAD model can be handed to CATIA users only as STEP, which carries geometry without the parametric feature history. CATIA users can therefore view, measure and reference the geometry, but cannot edit the FreeCAD parameters in CATIA. This is acceptable for the prototype. For production use, the company must decide whether FreeCAD is used alongside CATIA or whether a CATIA connection is added (X-04, §30.3). To keep that choice open:
 
@@ -2410,6 +2447,8 @@ ai-engineer/
     esp/            # separate package: schemas, rules, calcs, templates
   agent_definitions/  # versioned role definitions and instructions (§6.7)
   skills/           # governed skill packages: skills/<namespace>/<name>/ for skill_id <namespace>.<name> (§6.8.3)
+                    # namespaces: engineering, cad, structural, esp (catalogue §6.8.8); a package exists
+                    # only once work on that skill has started
     engineering/
       requirement-analysis/   # engineering.requirement-analysis
         SKILL.md
@@ -2417,12 +2456,6 @@ ai-engineer/
         schemas/
         references/
         tests/                # non-confidential cases only (§6.8.7)
-      design-basis/           # engineering.design-basis
-      verification/           # engineering.verification
-      change-impact-analysis/ # engineering.change-impact-analysis
-    cad/
-      freecad-parametric-modelling/
-      techdraw-generation/
     esp/                      # ESP skills; ESP rules stay in domains/esp (§11.6)
       hopper-design/          # esp.hopper-design
   data/

@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "iaiep:skill:engineering.requirement-analysis:output:0.1.0",
+  "title": "Requirement analysis result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["project_id", "target", "items", "open_issues", "summary"],
+  "$defs": {
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifact_id", "revision", "location", "quote"],
+      "properties": {
+        "artifact_id": { "type": "string", "minLength": 1 },
+        "revision": { "type": "string", "minLength": 1 },
+        "page": { "type": "integer", "minimum": 1 },
+        "location": { "type": "string", "minLength": 1, "description": "Section, table, cell or sheet reference" },
+        "quote": { "type": "string", "minLength": 1, "description": "Verbatim text from the source" }
+      }
+    },
+    "value": {
+      "description": "Number, list of numbers or text, after any recorded unit conversion",
+      "anyOf": [
+        { "type": "number" },
+        { "type": "string" },
+        { "type": "array", "items": { "type": ["number", "string"] } }
+      ]
+    },
+    "candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "unit", "source"],
+      "properties": {
+        "value": { "$ref": "#/$defs/value" },
+        "unit": { "type": "string" },
+        "source": { "$ref": "#/$defs/source" },
+        "authority": { "type": "string", "description": "Authority information stated in or about the source" }
+      }
+    }
+  },
+  "properties": {
+    "project_id": { "type": "string" },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_id", "schema_version"],
+      "properties": {
+        "schema_id": { "type": "string" },
+        "schema_version": { "type": "integer" }
+      }
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["field", "criticality", "status", "sources"],
+        "properties": {
+          "field": { "type": "string" },
+          "criticality": { "enum": ["critical", "non_critical"] },
+          "status": { "enum": ["found", "missing", "ambiguous", "conflicting"] },
+          "value": { "$ref": "#/$defs/value" },
+          "unit": { "type": "string" },
+          "original": {
+            "type": "object",
+            "description": "Value and unit as stated in the source, when a unit conversion was applied",
+            "additionalProperties": false,
+            "required": ["value", "unit"],
+            "properties": { "value": { "$ref": "#/$defs/value" }, "unit": { "type": "string" } }
+          },
+          "sources": { "type": "array", "items": { "$ref": "#/$defs/source" } },
+          "candidates": { "type": "array", "items": { "$ref": "#/$defs/candidate" } },
+          "note": { "type": "string" }
+        },
+        "allOf": [
+          {
+            "if": { "properties": { "status": { "const": "found" } } },
+            "then": { "required": ["value", "unit"], "properties": { "sources": { "minItems": 1 } } },
+            "else": { "not": { "required": ["value"] }, "required": ["note"] }
+          },
+          {
+            "if": { "properties": { "status": { "enum": ["ambiguous", "conflicting"] } } },
+            "then": { "required": ["candidates"], "properties": { "candidates": { "minItems": 1 } } }
+          }
+        ]
+      }
+    },
+    "open_issues": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["description", "for_role"],
+        "properties": {
+          "fields": { "type": "array", "items": { "type": "string" } },
+          "description": { "type": "string", "minLength": 1 },
+          "for_role": { "enum": ["engineering_owner", "product_owner", "project_admin"] }
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["found", "missing", "ambiguous", "conflicting", "critical_not_found"],
+      "properties": {
+        "found": { "type": "integer", "minimum": 0 },
+        "missing": { "type": "integer", "minimum": 0 },
+        "ambiguous": { "type": "integer", "minimum": 0 },
+        "conflicting": { "type": "integer", "minimum": 0 },
+        "critical_not_found": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

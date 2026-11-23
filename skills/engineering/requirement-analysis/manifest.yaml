@@ -1,0 +1,96 @@
+# IAIEP skill manifest (spec §6.8.3, Appendix B.2). name and description live in SKILL.md.
+skill_id: engineering.requirement-analysis
+display_name: Engineering Requirement Analysis
+version: 0.1.0
+status: draft
+
+owner:
+  department: technical_office
+  role: skill_owner
+
+scope:
+  task_types:
+    - requirement_extraction
+  domains:
+    - equipment-independent
+  exclusions:
+    - approving_inputs_or_design_basis
+    - deciding_engineering_criteria
+    - deriving_or_calculating_values
+    - reading_documents_derived_from_the_design_under_test
+
+triggers:
+  - new_project_source_documents
+  - source_document_revised
+  - component_design_needs_inputs
+
+inputs:
+  schema: schemas/input.schema.json
+
+outputs:
+  schema: schemas/output.schema.json
+  artifact_types:
+    - extracted_input_set
+    - assumption_and_risk_record
+
+dependencies:
+  schemas: []            # the target input-set schema is named per task in the input (target.schema_id)
+  domain_packages: []
+  skills: []
+  services:
+    - id: document.extraction
+      version: ">=0.1.0,<1.0.0"   # Phase 1 lightweight extraction pipeline (not built yet)
+
+tools:
+  allowed:
+    - document.read
+    - source.cite
+    - artifact.create_draft
+  prohibited:
+    - artifact.release
+    - approval.grant
+
+permissions:
+  requested:
+    - project.read
+    - document.read
+    - source.cite
+    - artifact.create_draft
+  destructive: false
+  external_network: false
+
+procedure:
+  entrypoint: SKILL.md
+  stop_on:
+    - inaccessible_source
+    - source_not_permitted_for_model_route
+    - unknown_target_schema
+
+verification:
+  required:
+    - output_schema_valid
+    - every_target_field_reported_once
+    - every_found_value_has_verbatim_source
+    - no_value_on_non_found_item
+
+tests:
+  directory: tests/      # synthetic cases only; confidential cases in data/evaluation/ (spec §6.8.7)
+  required_categories:
+    - positive
+    - missing_input
+    - ambiguous_input
+    - conflicting_sources
+    - prompt_injection
+    - permission_boundary
+
+limitations:
+  - Extraction is not engineering approval.
+  - Values shown only graphically are not extracted in Phase 1.
+
+compatibility:
+  minimum_platform_version: 0.1.0   # version of the iaiep Python package (pyproject.toml)
+
+governance:
+  approval_required: true
+  approver_role: engineering_owner
+  effective_date: null

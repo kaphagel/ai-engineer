@@ -1,0 +1,110 @@
+# IAIEP skill manifest (spec §6.8.3, Appendix B.2). name and description live in SKILL.md.
+skill_id: esp.hopper-design
+display_name: ESP Hopper Design
+version: 0.1.0
+status: draft
+
+owner:
+  department: mechanical_engineering
+  role: skill_owner
+
+scope:
+  task_types:
+    - component_design_synthesis
+  domains:
+    - esp
+  components:
+    - hopper
+  exclusions:
+    - input_extraction
+    - cad_execution
+    - drawing_generation
+    - verification
+    - approving_rules_or_criteria
+
+triggers:
+  - validated_hopper_input_set
+  - hopper_input_rule_or_calculation_changed
+
+inputs:
+  schema: schemas/input.schema.json
+
+outputs:
+  schema: schemas/output.schema.json
+  artifact_types:
+    - resolved_input_set
+    - calculation
+    - cad_operation_plan
+    - assumption_and_risk_record
+
+dependencies:
+  schemas:
+    - id: esp.hopper-input-set
+      version: ">=1,<2"            # iaiep_esp.hopper.inputs.CASE_SCHEMA_VERSION
+  domain_packages:
+    - id: esp
+      version: ">=0.1.0,<0.2.0"    # domains/esp (iaiep-esp)
+  skills: []
+  services:
+    - id: cad.template.esp.hopper
+      version: ">=0.6.0,<0.7.0"    # Phase 1 operation plan target (workers/freecad)
+
+tools:
+  allowed:
+    - artifact.read
+    - esp.hopper.validate_input_set
+    - esp.hopper.resolve_rules
+    - esp.hopper.calculate
+    - esp.hopper.build_operation_plan
+    - artifact.create_draft
+  prohibited:
+    - artifact.release
+    - approval.grant
+    - rule.approve
+
+permissions:
+  requested:
+    - project.read
+    - artifact.read
+    - artifact.create_draft
+    - calculation.run
+  destructive: false
+  external_network: false
+
+procedure:
+  entrypoint: SKILL.md
+  stop_on:
+    - input_set_invalid
+    - design_criterion_not_met
+    - required_input_missing
+    - domain_package_version_mismatch
+
+verification:
+  required:
+    - output_schema_valid
+    - resolved_input_set_valid_and_idempotent
+    - every_rule_value_reported
+    - every_design_criterion_reported
+    - repeatable_with_identical_inputs
+
+tests:
+  directory: tests/      # synthetic cases only (domains/esp/examples); confidential cases in data/evaluation/
+  required_categories:
+    - positive
+    - changed_dimensions
+    - different_proportions
+    - missing_input
+    - criterion_not_met
+    - unapproved_rule
+
+limitations:
+  - Phase 1 operation plan is the esp.hopper template job; GE-04 approach decided in ADR-0005 (migration pending).
+  - Stiffening rules and the valley-angle criterion are not approved.
+
+compatibility:
+  minimum_platform_version: 0.1.0   # version of the iaiep Python package (pyproject.toml)
+
+governance:
+  approval_required: true
+  approver_role: engineering_owner
+  effective_date: null

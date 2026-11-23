@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "iaiep:skill:esp.hopper-design:output:0.1.0",
+  "title": "ESP hopper design result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["project_id", "status", "exploratory", "rule_applications", "criteria", "open_issues"],
+  "$defs": {
+    "artifact_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifact_id", "revision"],
+      "properties": {
+        "artifact_id": { "type": "string", "minLength": 1 },
+        "revision": { "type": "string", "minLength": 1 }
+      }
+    }
+  },
+  "properties": {
+    "project_id": { "type": "string" },
+    "status": { "enum": ["completed", "blocked"] },
+    "blocking_reason": { "type": "string" },
+    "exploratory": {
+      "type": "boolean",
+      "description": "True when the input set was not validated by the engineering owner"
+    },
+    "candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["resolved_input_set", "calculation", "operation_plan", "template"],
+      "properties": {
+        "resolved_input_set": { "$ref": "#/$defs/artifact_ref" },
+        "calculation": { "$ref": "#/$defs/artifact_ref" },
+        "operation_plan": { "$ref": "#/$defs/artifact_ref" },
+        "template": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "version"],
+          "properties": { "id": { "type": "string" }, "version": { "type": "string" } }
+        }
+      }
+    },
+    "rule_applications": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["target", "source", "approved"],
+        "properties": {
+          "target": { "type": "string", "description": "What the rule set, e.g. 'side wall, tier 2 stiffeners'" },
+          "source": { "type": "string", "description": "Rule source as recorded in the input set" },
+          "approved": { "type": "boolean" }
+        }
+      }
+    },
+    "criteria": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "required_value", "actual_value", "unit", "met", "approved", "source"],
+        "properties": {
+          "id": { "type": "string", "description": "e.g. design.min_valley_angle" },
+          "required_value": { "type": "number" },
+          "actual_value": { "type": "number" },
+          "unit": { "type": "string" },
+          "met": { "type": "boolean" },
+          "approved": { "type": "boolean" },
+          "source": { "type": "string" }
+        }
+      }
+    },
+    "open_issues": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["description", "for_role"],
+        "properties": {
+          "description": { "type": "string", "minLength": 1 },
+          "for_role": { "enum": ["engineering_owner", "product_owner"] }
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "completed" } } },
+      "then": { "required": ["candidate"] },
+      "else": { "required": ["blocking_reason"] }
+    }
+  ]
+}
